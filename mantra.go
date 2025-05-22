@@ -9,6 +9,9 @@ import (
 // ansiRegex is used to remove ANSI color codes.
 var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[mKHF]`)
 
+// lineNumRegex is used to remove the optional [Line: XXX] part at the end.
+var lineNumRegex = regexp.MustCompile(`\s*\[Line: \d+\]\s*$`)
+
 // processMantraLine processes a single line of mantra tool output.
 // It extracts the secret and URL, formatting them as "secret - URL".
 // Lines not starting with "[+] " (after ANSI codes are stripped) are ignored.
@@ -25,38 +28,43 @@ func processMantraLine(line string) string {
 	contentLine := strings.TrimPrefix(cleanLine, "[+] ")
 	contentLine = strings.TrimSpace(contentLine)
 
+	// Step 3.5: Remove the optional [Line: XXX] part from the end.
+	contentLine = lineNumRegex.ReplaceAllString(contentLine, "")
+	contentLine = strings.TrimSpace(contentLine) // Trim again in case the regex left spaces
+
 	// Step 4: Locate the secret and URL.
-	// The primary expected format is "URL  [SECRET_VALUE]"
-	// We use SplitN with "  [" as a delimiter between URL and the start of the secret part.
-	parts := strings.SplitN(contentLine, "  [", 2)
-	if len(parts) == 2 {
-		urlPart := strings.TrimSpace(parts[0])
-		secretPartWithBracket := parts[1]
+	// The secret is expected to be enclosed in the last pair of square brackets "[]".
+	// The URL is expected to be the part before these brackets.
 
-		// The secret part should end with a closing bracket.
-		if strings.HasSuffix(secretPartWithBracket, "]") {
-			secretValue := strings.TrimSuffix(secretPartWithBracket, "]")
-			secretValue = strings.TrimSpace(secretValue) // Trim spaces within the brackets as well
-
-			if urlPart != "" && secretValue != "" {
-				return fmt.Sprintf("%s - %s", secretValue, urlPart)
-			}
-		}
-	}
-
-	// Fallback: If the above SplitN doesn't match, try the LastIndex logic
-	// This is for cases where the spacing might be different but structure "URL [SECRET]" (at the end) holds.
 	lastBracketOpen := strings.LastIndex(contentLine, "[")
 	lastBracketClose := strings.LastIndex(contentLine, "]")
 
-	// Check if brackets are present and form the end of the string for the secret.
-	if lastBracketOpen != -1 && lastBracketClose != -1 && lastBracketOpen < lastBracketClose && lastBracketClose == len(contentLine)-1 {
-		urlPart := strings.TrimSpace(contentLine[:lastBracketOpen])
-		secretValue := strings.TrimSpace(contentLine[lastBracketOpen+1 : lastBracketClose])
-		if urlPart != "" && secretValue != "" {
-			return fmt.Sprintf("%s - %s", secretValue, urlPart)
+	// Validate the positions of the brackets.
+	if lastBracketOpen == -1 || lastBracketClose == -1 || lastBracketOpen >= lastBracketClose || lastBracketClose != len(contentLine)-1 {
+		// If brackets are not found, or not at the very end, the line is malformed for our parsing.
+		// Try to split by "  [" as a fallback for structures like "URL  [secret]"
+		parts := strings.SplitN(contentLine, "  [", 2)
+		if len(parts) == 2 {
+			urlPart := strings.TrimSpace(parts[0])
+			secretPartWithBracket := parts[1]
+			if strings.HasSuffix(secretPartWithBracket, "]") {
+				secretValue := strings.TrimSuffix(secretPartWithBracket, "]")
+				secretValue = strings.TrimSpace(secretValue)
+				if urlPart != "" && secretValue != "" {
+					return fmt.Sprintf("%s - %s", secretValue, urlPart)
+				}
+			}
 		}
+		return "" // If alternative parsing also fails.
 	}
 
-	return "" // If parsing fails for all known formats.
+	// Original logic if brackets are found correctly at the end.
+	urlPart := strings.TrimSpace(contentLine[:lastBracketOpen])
+	secretValue := strings.TrimSpace(contentLine[lastBracketOpen+1 : lastBracketClose])
+
+	if urlPart == "" || secretValue == "" {
+		return "" // If either part is empty, consider it not a valid find.
+	}
+
+	return fmt.Sprintf("%s - %s", secretValue, urlPart)
 }
