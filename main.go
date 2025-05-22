@@ -25,6 +25,11 @@ var (
 	dnsExtractMX    bool
 	// Wafw00f specific flag
 	wafKindFilter string
+	// Ffuf specific flags
+	ffufProcessFolder        bool
+	ffufFilterStatusCodes    string
+	ffufFilterContentTypes   string
+	ffufFilterContentLengths string
 	// isDomainSubcommandUsed // No longer needed
 )
 
@@ -64,10 +69,16 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "Dns Specific Options ('dns' tool only - must choose one):")
 	fmt.Fprintln(os.Stderr, "  -ip            Extract IP addresses (A/AAAA records), sorted and unique.")
 	fmt.Fprintln(os.Stderr, "  -cname         Extract CNAME domain records (the canonical name).")
-	fmt.Fprintln(os.Stderr, "  -mx            Extract MX domain records (the mail exchange hostname).\\n")
+	fmt.Fprintln(os.Stderr, "  -mx            Extract MX domain records (the mail exchange hostname).\n")
 
 	fmt.Fprintln(os.Stderr, "Wafw00f Specific Options ('wafw00f' tool only):")
-	fmt.Fprintln(os.Stderr, "  -k <kind>      WAF kind to extract: 'none', 'generic', or 'known' (default: 'none').\\n")
+	fmt.Fprintln(os.Stderr, "  -k <kind>      WAF kind to extract: 'none', 'generic', or 'known' (default: 'none').\n")
+
+	fmt.Fprintln(os.Stderr, "FFUF Specific Options ('ffuf' tool only):")
+	fmt.Fprintln(os.Stderr, "  -f             Process all files in the current directory as ffuf input.")
+	fmt.Fprintln(os.Stderr, "  -fc <codes>    Comma-separated list of status codes to filter out (e.g., 403,404).")
+	fmt.Fprintln(os.Stderr, "  -fcl <lengths> Comma-separated list of content lengths to filter out (e.g., 0,123).")
+	fmt.Fprintln(os.Stderr, "  -fct <types>   Comma-separated list of content types to filter out (e.g., text/html,application/json).\n")
 
 	fmt.Fprintln(os.Stderr, "Input:")
 	fmt.Fprintln(os.Stderr, "  [input_file]   Optional. File to read input from. If omitted or '-', reads from stdin.")
@@ -116,6 +127,12 @@ func main() {
 
 	cmdFlags.StringVar(&wafKindFilter, "k", "none", "WAF kind to extract (none, generic, known) (wafw00f only)")
 
+	// Ffuf specific flags
+	cmdFlags.BoolVar(&ffufProcessFolder, "f", false, "Process all files in current directory (ffuf only)")
+	cmdFlags.StringVar(&ffufFilterStatusCodes, "fc", "", "Comma-separated status codes to filter out (ffuf only)")
+	cmdFlags.StringVar(&ffufFilterContentTypes, "fct", "", "Comma-separated content types to filter out (ffuf only)")
+	cmdFlags.StringVar(&ffufFilterContentLengths, "fcl", "", "Comma-separated content lengths to filter out (ffuf only)")
+
 	err := cmdFlags.Parse(argsForFlags)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\\n", err)
@@ -153,37 +170,34 @@ func main() {
 	}
 
 	var inputFile string
-	remainingArgs := cmdFlags.Args()
+	remainingArgs := cmdFlags.Args() // Args not parsed as flags
 	if len(remainingArgs) > 0 {
 		inputFile = remainingArgs[0]
 	} else {
 		inputFile = ""
 	}
 
-	var reader *bufio.Reader
-	var file *os.File
-	var err2 error
-
-	if inputFile != "" && inputFile != "-" {
-		file, err2 = os.Open(inputFile)
-		if err2 != nil {
-			fmt.Fprintf(os.Stderr, "Error: Cannot read file '%s': %v\\n", inputFile, err2)
-			os.Exit(1)
+	// Input validation before starting goroutines
+	if !(toolType == "ffuf" && ffufProcessFolder) {
+		// Standard mode: single input file or stdin
+		if inputFile == "" { // No file argument provided
+			stat, _ := os.Stdin.Stat()
+			if (stat.Mode() & os.ModeCharDevice) != 0 { // And stdin is a TTY (no pipe)
+				fmt.Fprintln(os.Stderr, "Error: No input file specified and no data piped to stdin.")
+				usage() // Exits
+			}
+		} else if inputFile != "-" { // A specific file is provided (not stdin via "-")
+			if _, err := os.Stat(inputFile); os.IsNotExist(err) {
+				fmt.Fprintf(os.Stderr, "Error: Input file '%s' not found.\n", inputFile)
+				os.Exit(1)
+			}
 		}
-		defer file.Close()
-		reader = bufio.NewReader(file)
-	} else {
-		stat, _ := os.Stdin.Stat()
-		if (stat.Mode()&os.ModeCharDevice) == 0 || inputFile == "-" {
-			reader = bufio.NewReader(os.Stdin)
-		} else {
-			fmt.Fprintln(os.Stderr, "Error: No input file provided and no data piped to stdin.")
-			usage()
+		// If inputFile == "-", stdin will be used, which is fine.
+	} else { // ffuf -f mode
+		if inputFile != "" && inputFile != "-" {
+			fmt.Fprintf(os.Stderr, "Warning: Input file argument '%s' is ignored when -f (process folder) option is used with ffuf.\n", inputFile)
 		}
-	}
-	if reader == nil {
-		fmt.Fprintln(os.Stderr, "Error: Input reader was not initialized.")
-		os.Exit(1)
+		// Further validation for ffuf -f (e.g., directory readability) can be done in the goroutine.
 	}
 
 	linesChan := make(chan string, numThreads)
@@ -191,15 +205,71 @@ func main() {
 	var wg sync.WaitGroup
 	var outputWg sync.WaitGroup
 
+	// Producer goroutine: reads input and sends to linesChan
 	go func() {
-		scanner := bufio.NewScanner(reader)
-		for scanner.Scan() {
-			linesChan <- scanner.Text()
+		defer close(linesChan)
+
+		if toolType == "ffuf" && ffufProcessFolder {
+			// Process all files in current directory
+			cwdFiles, err := os.ReadDir(".")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error reading current directory for ffuf -f: %v\n", err)
+				return // Exit goroutine, linesChan will be closed
+			}
+
+			foundFiles := false
+			for _, dirEntry := range cwdFiles {
+				if !dirEntry.IsDir() {
+					filePath := dirEntry.Name()
+					file, err := os.Open(filePath)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "Error opening file '%s' for ffuf: %v\n", filePath, err)
+						continue // Skip this file
+					}
+					// fmt.Fprintf(os.Stderr, "INFO: Processing file '%s' for ffuf -f mode.\n", filePath) // Debug
+
+					scanner := bufio.NewScanner(file)
+					for scanner.Scan() {
+						linesChan <- scanner.Text()
+					}
+					if err := scanner.Err(); err != nil {
+						fmt.Fprintf(os.Stderr, "Error reading from file '%s' for ffuf: %v\n", filePath, err)
+					}
+					file.Close() // Close the file
+					foundFiles = true
+				}
+			}
+			if !foundFiles {
+				fmt.Fprintln(os.Stderr, "Warning: ffuf -f: No regular files found in the current directory.")
+			}
+
+		} else {
+			// Standard input: single file or stdin, as validated before starting this goroutine
+			var reader *bufio.Reader
+			var fileToClose *os.File // Variable to hold the file if opened, so it can be closed
+
+			if inputFile != "" && inputFile != "-" { // Specific input file
+				var openErr error
+				fileToClose, openErr = os.Open(inputFile)
+				if openErr != nil {
+					// This should have been caught by pre-flight check, but as a safeguard:
+					fmt.Fprintf(os.Stderr, "Error: Cannot open input file '%s': %v\n", inputFile, openErr)
+					return // Exit goroutine
+				}
+				defer fileToClose.Close() // Close when goroutine exits
+				reader = bufio.NewReader(fileToClose)
+			} else { // Stdin (either no inputFile, or inputFile == "-")
+				reader = bufio.NewReader(os.Stdin)
+			}
+
+			scanner := bufio.NewScanner(reader)
+			for scanner.Scan() {
+				linesChan <- scanner.Text()
+			}
+			if err := scanner.Err(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
+			}
 		}
-		if err := scanner.Err(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading input: %v\\n", err)
-		}
-		close(linesChan)
 	}()
 
 	for i := 0; i < numThreads; i++ {
@@ -219,7 +289,7 @@ func main() {
 						processedOutputs = append(processedOutputs, result)
 					}
 				case "ffuf":
-					result := processFfufLine(line)
+					result := processFfufLine(line, ffufFilterStatusCodes, ffufFilterContentTypes, ffufFilterContentLengths)
 					if result != "" {
 						processedOutputs = append(processedOutputs, result)
 					}

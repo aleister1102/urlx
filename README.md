@@ -173,8 +173,9 @@ Happy URL extracting! 🎉
 ## 🔮 Future Features
 - Allow to filter by status code, content length, content type, etc.
 - Support for:
-  - amass
-  - nmap (filter open ports, extract IPv6, IP:port pairs, etc)
+  - [x] amass
+  - [x] nmap (filter open ports, extract IPv6, IP:port pairs, etc)
+  - [ ] ffuf for a directory (process all files in the current directory), filter by code, content-type, length, etc.
 
 ## 🐛 Bugs
 - Option `-mx` of `dns` subcommand is not working.
