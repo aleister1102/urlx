@@ -12,31 +12,32 @@ import (
 )
 
 var (
-	// toolType is now derived from subcommand
 	extractRedirect   bool
 	stripComponents   bool
-	extractDomainOnly bool
-	numThreads        int // Renamed from parallelThreads, set by new -t flag
-	// inputFile is now a local variable in main
-	// New nmap specific flags
-	nmapExportIPPort    bool // For nmap -p
-	nmapFilterOpenPorts bool // For nmap -o
-	// New dns specific flags
-	dnsExtractIP    bool // For dns -ip
-	dnsExtractCNAME bool // For dns -cname
-	dnsExtractMX    bool // For dns -mx
+	extractDomainOnly bool // Flag -d, áp dụng cho các tool khác domain
+	numThreads        int
+	// Nmap specific flags
+	nmapExportIPPort    bool
+	nmapFilterOpenPorts bool
+	// Dns specific flags
+	dnsExtractIP    bool
+	dnsExtractCNAME bool
+	dnsExtractMX    bool
 	// Wafw00f specific flag
-	wafKindFilter string // For wafw00f -k
+	wafKindFilter string
+	// isDomainSubcommandUsed // No longer needed
 )
 
 func usage() {
-	// Note: The usage message needs to be manually maintained to reflect FlagSet usage
 	fmt.Fprintf(os.Stderr, "Usage: %s <tool_name> [options] [input_file]\\n", os.Args[0])
-	fmt.Fprintln(os.Stderr, "  <tool_name>    : Specify the tool (httpx, ffuf, dirsearch, amass, nmap, dns, wafw00f). Mandatory.")
-	fmt.Fprintln(os.Stderr, "  Common Options:")
-	fmt.Fprintln(os.Stderr, "    -r             : Extract redirect URLs (if available and tool supports it).")
-	fmt.Fprintln(os.Stderr, "    -s             : Strip URL components (query params, fragments).")
-	fmt.Fprintln(os.Stderr, "    -d             : Extract only the domain/IP from URLs/output.")
+	// fmt.Fprintln(os.Stderr, "  domain         : Optional subcommand. If used, equivalent to using the -d flag (extracts domain/IP only).") // Removed
+	fmt.Fprintln(os.Stderr, "  <tool_name>    : Specify the tool (httpx, ffuf, dirsearch, amass, nmap, dns, wafw00f, domain). Mandatory.")
+	fmt.Fprintln(os.Stderr, "  Tool Specific Information:")
+	fmt.Fprintln(os.Stderr, "    domain         : Extracts domain/IP from a list of URLs.")
+	fmt.Fprintln(os.Stderr, "  Common Options (not applicable to 'domain' tool directly, but affects other tools if used with them via -d):")
+	fmt.Fprintln(os.Stderr, "    -r             : Extract redirect URLs.")
+	fmt.Fprintln(os.Stderr, "    -s             : Strip URL components.")
+	fmt.Fprintln(os.Stderr, "    -d             : Extract only domain/IP. (Note: 'domain' tool inherently does this).")
 	fmt.Fprintln(os.Stderr, "    -t <threads>   : Number of concurrent threads (default: 1).")
 	fmt.Fprintln(os.Stderr, "  Nmap Specific Options (if <tool_name> is 'nmap'):")
 	fmt.Fprintln(os.Stderr, "    -p             : Export IP and port pairs.")
@@ -44,7 +45,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  Dns Specific Options (if <tool_name> is 'dns'):")
 	fmt.Fprintln(os.Stderr, "    -ip            : Extract IP addresses (v4 & v6), sorted and unique.")
 	fmt.Fprintln(os.Stderr, "    -cname         : Extract CNAME domain records.")
-	fmt.Fprintln(os.Stderr, "    -mx            : Extract MX domain records.")
+	fmt.Fprintln(os.Stderr, "    -mx            : Extract MX domain records (must be one of -ip, -cname, -mx).")
 	fmt.Fprintln(os.Stderr, "  Wafw00f Specific Options (if <tool_name> is 'wafw00f'):")
 	fmt.Fprintln(os.Stderr, "    -k <kind>      : WAF kind to extract (none, generic, known; default: none).")
 	fmt.Fprintln(os.Stderr, "  input_file     : Optional input file. If not provided, reads from stdin.")
@@ -67,52 +68,48 @@ func getDomain(rawURL string) string {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "Error: <tool_name> subcommand is mandatory.")
+		fmt.Fprintln(os.Stderr, "Error: <tool_name> is mandatory.")
 		usage()
 	}
 
 	toolType := os.Args[1]
+	argsForFlags := os.Args[2:]
 
-	// Create a new FlagSet for arguments after the subcommand
 	cmdFlags := flag.NewFlagSet(toolType, flag.ExitOnError)
-	cmdFlags.Usage = usage // Point to our custom usage function
+	cmdFlags.Usage = usage
 
-	// Define flags on this FlagSet, using global variables
+	// Define common flags. Note: -d is defined here but its primary effect is for tools other than 'domain'.
 	cmdFlags.BoolVar(&extractRedirect, "r", false, "Extract redirect URLs")
-	cmdFlags.BoolVar(&stripComponents, "s", false, "Strip URL components (query params, fragments)")
-	cmdFlags.BoolVar(&extractDomainOnly, "d", false, "Extract only the domain/IP from URLs/output")
+	cmdFlags.BoolVar(&stripComponents, "s", false, "Strip URL components")
+	cmdFlags.BoolVar(&extractDomainOnly, "d", false, "Extract only domain/IP from URLs/output (for relevant tools)")
 	cmdFlags.IntVar(&numThreads, "t", 1, "Number of concurrent threads")
 
-	// Add nmap specific flags
-	// These flags will be parsed if provided, but only nmap tool logic should use them.
-	// The descriptions here also clarify they are for nmap.
+	// Tool-specific flags
 	cmdFlags.BoolVar(&nmapExportIPPort, "p", false, "Export IP and port pairs (nmap only)")
 	cmdFlags.BoolVar(&nmapFilterOpenPorts, "o", false, "Filter for open ports only (nmap only)")
 
-	// Add dns specific flags
 	cmdFlags.BoolVar(&dnsExtractIP, "ip", false, "Extract IP addresses (dns only)")
 	cmdFlags.BoolVar(&dnsExtractCNAME, "cname", false, "Extract CNAME records (dns only)")
 	cmdFlags.BoolVar(&dnsExtractMX, "mx", false, "Extract MX records (dns only)")
 
-	// Add wafw00f specific flag
 	cmdFlags.StringVar(&wafKindFilter, "k", "none", "WAF kind to extract (none, generic, known) (wafw00f only)")
 
-	// Parse the flags from os.Args[2:] (arguments after the subcommand)
-	err := cmdFlags.Parse(os.Args[2:])
-	if err != nil { // Handle parsing errors (though ExitOnError should handle it)
-		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\n", err)
+	err := cmdFlags.Parse(argsForFlags)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\\n", err)
 		usage()
 	}
+
+	// No longer need to set extractDomainOnly based on isDomainSubcommandUsed
 
 	switch toolType {
-	case "httpx", "ffuf", "dirsearch", "amass", "nmap", "dns", "wafw00f":
+	case "httpx", "ffuf", "dirsearch", "amass", "nmap", "dns", "wafw00f", "domain":
 		// Known tool
 	default:
-		fmt.Fprintf(os.Stderr, "Error: Unsupported tool type '%s'. Supported tools are: httpx, ffuf, dirsearch, amass, nmap, dns, wafw00f.\n", toolType)
+		fmt.Fprintf(os.Stderr, "Error: Unsupported tool type '%s'. Supported tools are: httpx, ffuf, dirsearch, amass, nmap, dns, wafw00f, domain.\\n", toolType)
 		usage()
 	}
 
-	// Check for dns tool specific flag requirement
 	if toolType == "dns" && !dnsExtractIP && !dnsExtractCNAME && !dnsExtractMX {
 		fmt.Fprintln(os.Stderr, "Error: For 'dns' tool, you must specify one of -ip, -cname, or -mx options.")
 		usage()
@@ -120,18 +117,21 @@ func main() {
 
 	if toolType == "wafw00f" {
 		if wafKindFilter != "none" && wafKindFilter != "generic" && wafKindFilter != "known" {
-			fmt.Fprintf(os.Stderr, "Error: Invalid value for -k option: '%s'. Must be one of none, generic, or known.\n", wafKindFilter)
+			fmt.Fprintf(os.Stderr, "Error: Invalid value for -k option: '%s'. Must be one of none, generic, or known.\\n", wafKindFilter)
 			usage()
 		}
 	}
+
+	// If the 'domain' tool is used, no other flags are expected or processed for it by this logic block.
+	// It inherently extracts domains.
 
 	if numThreads < 1 {
 		fmt.Fprintln(os.Stderr, "Error: -t <threads> must be a positive integer.")
 		usage()
 	}
 
-	var inputFile string             // inputFile is now a local variable
-	remainingArgs := cmdFlags.Args() // Get non-flag arguments after FlagSet parsing
+	var inputFile string
+	remainingArgs := cmdFlags.Args()
 	if len(remainingArgs) > 0 {
 		inputFile = remainingArgs[0]
 	} else {
@@ -145,24 +145,21 @@ func main() {
 	if inputFile != "" && inputFile != "-" {
 		file, err2 = os.Open(inputFile)
 		if err2 != nil {
-			fmt.Fprintf(os.Stderr, "Error: Cannot read file '%s': %v\n", inputFile, err2)
+			fmt.Fprintf(os.Stderr, "Error: Cannot read file '%s': %v\\n", inputFile, err2)
 			os.Exit(1)
 		}
 		defer file.Close()
 		reader = bufio.NewReader(file)
 	} else {
-		// Check if stdin is a pipe or tty
 		stat, _ := os.Stdin.Stat()
-		if (stat.Mode() & os.ModeCharDevice) == 0 {
-			reader = bufio.NewReader(os.Stdin)
-		} else if inputFile == "-" {
+		if (stat.Mode()&os.ModeCharDevice) == 0 || inputFile == "-" {
 			reader = bufio.NewReader(os.Stdin)
 		} else {
 			fmt.Fprintln(os.Stderr, "Error: No input file provided and no data piped to stdin.")
 			usage()
 		}
 	}
-	if reader == nil { // Should not happen if logic above is correct
+	if reader == nil {
 		fmt.Fprintln(os.Stderr, "Error: Input reader was not initialized.")
 		os.Exit(1)
 	}
@@ -172,24 +169,22 @@ func main() {
 	var wg sync.WaitGroup
 	var outputWg sync.WaitGroup
 
-	// Input Goroutine
 	go func() {
 		scanner := bufio.NewScanner(reader)
 		for scanner.Scan() {
 			linesChan <- scanner.Text()
 		}
 		if err := scanner.Err(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error reading input: %v\\n", err)
 		}
 		close(linesChan)
 	}()
 
-	// Worker Goroutines
 	for i := 0; i < numThreads; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			var currentNmapIPContext string // Context for nmap IP, specific to each worker
+			var currentNmapIPContext string
 			for line := range linesChan {
 				if line == "" {
 					continue
@@ -214,7 +209,7 @@ func main() {
 				case "amass":
 					result := processAmassLine(line)
 					if result != "" {
-						potentialHostnames := strings.Split(result, "\n")
+						potentialHostnames := strings.Split(result, "\\n")
 						for _, hostname := range potentialHostnames {
 							hostname = strings.TrimSpace(hostname)
 							if hostname != "" {
@@ -224,41 +219,42 @@ func main() {
 					}
 				case "nmap":
 					var nmapResults []string
-					// processNmapLine will need to be updated in parser_nmap.go
-					// to use the global nmapExportIPPort and nmapFilterOpenPorts flags.
-					// It should handle the logic: if both -p and -o are present, -o is applied first.
 					nmapResults, currentNmapIPContext = processNmapLine(line, currentNmapIPContext)
 					processedOutputs = append(processedOutputs, nmapResults...)
 				case "dns":
-					// processDnsLine relies on global flags dnsExtractIP, dnsExtractCNAME, dnsExtractMX.
-					// If dnsExtractIP is true, it will return IPs. These IPs will be collected,
-					// sorted, and deduplicated in the output goroutine.
 					dnsResults := processDnsLine(line)
 					processedOutputs = append(processedOutputs, dnsResults...)
 				case "wafw00f":
 					wafw00fResults := processWafw00fLine(line)
 					processedOutputs = append(processedOutputs, wafw00fResults...)
+				case "domain":
+					domainResult := processDomainToolLine(line)
+					if domainResult != "" {
+						processedOutputs = append(processedOutputs, domainResult)
+					}
 				}
 				for _, outputItem := range processedOutputs {
-					if outputItem == "" { // Should already be handled by individual processors, but good check
+					if outputItem == "" {
 						continue
 					}
-					if extractDomainOnly {
+					// Nếu tool là 'domain', nó đã tự trích xuất domain rồi.
+					// Đối với các tool khác, kiểm tra cờ extractDomainOnly.
+					if toolType == "domain" {
+						resultsChan <- outputItem // outputItem đã là domain/IP
+					} else if extractDomainOnly {
 						var domainOrIP string
 						if toolType == "nmap" {
-							// Extract IP from the nmap formatted string: "[IP] - ..."
-							ipParts := strings.SplitN(outputItem, " - ", 2) // Split at the first " - "
+							ipParts := strings.SplitN(outputItem, " - ", 2)
 							if len(ipParts) > 0 {
 								domainOrIP = strings.Trim(ipParts[0], "[]")
 							}
 						} else if toolType == "wafw00f" {
-							// For wafw00f, output is "URL - WAFName"
 							urlAndWaf := strings.SplitN(outputItem, " - ", 2)
 							if len(urlAndWaf) > 0 {
 								domainOrIP = getDomain(urlAndWaf[0])
 							}
 						} else {
-							domainOrIP = getDomain(outputItem) // Existing logic for other tools
+							domainOrIP = getDomain(outputItem)
 						}
 						if domainOrIP != "" {
 							resultsChan <- domainOrIP
@@ -271,7 +267,6 @@ func main() {
 		}()
 	}
 
-	// Output/Printer Goroutine
 	outputWg.Add(1)
 	go func() {
 		defer outputWg.Done()
@@ -280,7 +275,6 @@ func main() {
 			for result := range resultsChan {
 				allIPs = append(allIPs, result)
 			}
-			// Sort and deduplicate IPs
 			sort.Strings(allIPs)
 			uniqueIPs := make([]string, 0, len(allIPs))
 			if len(allIPs) > 0 {
@@ -301,10 +295,9 @@ func main() {
 		}
 	}()
 
-	// Waiting and Cleanup
-	wg.Wait()          // Wait for all workers to finish processing
-	close(resultsChan) // Signal to the printer goroutine that no more results are coming
-	outputWg.Wait()    // Wait for the printer goroutine to finish printing all results
+	wg.Wait()
+	close(resultsChan)
+	outputWg.Wait()
 }
 
 func isValidURL(toTest string) bool {
@@ -322,23 +315,18 @@ func isValidURL(toTest string) bool {
 func stripURLComponents(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return rawURL // Return original if parsing fails
+		return rawURL
 	}
 	u.RawQuery = ""
 	u.Fragment = ""
 	return u.String()
 }
 
-// processHttpxLine is now in parser_httpx.go
-
-// processFfufLine is now in parser_ffuf.go
-
-// processDirsearchLine is now in parser_dirsearch.go
-
-// processAmassLine is now in parser_amass.go
-
-// processNmapLine is now in parser_nmap.go
-
-// processDnsLine is now in parser_dns.go
-
-// processWafw00fLine is now in wafw00f.go
+// processHttpxLine is in parser_httpx.go
+// processFfufLine is in parser_ffuf.go
+// processDirsearchLine is in parser_dirsearch.go
+// processAmassLine is in parser_amass.go
+// processNmapLine is in nmap.go
+// processDnsLine is in dns.go
+// processWafw00fLine is in wafw00f.go
+// processDomainToolLine is in domain_parser.go
