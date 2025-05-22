@@ -19,16 +19,23 @@ var (
 	extractDomainOnly bool
 	numThreads        int // Renamed from parallelThreads, set by new -t flag
 	// inputFile is now a local variable in main
+	// New nmap specific flags
+	nmapExportIPPort    bool // For nmap -p
+	nmapFilterOpenPorts bool // For nmap -o
 )
 
 func usage() {
 	// Note: The usage message needs to be manually maintained to reflect FlagSet usage
-	fmt.Fprintf(os.Stderr, "Usage: %s <tool_name> [-r] [-s] [-d] [-t <threads>] [input_file]\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "Usage: %s <tool_name> [options] [input_file]\\n", os.Args[0])
 	fmt.Fprintln(os.Stderr, "  <tool_name>    : Specify the tool (httpx, ffuf, dirsearch, amass, nmap). Mandatory.")
-	fmt.Fprintln(os.Stderr, "  -r             : Extract redirect URLs (if available and tool supports it).")
-	fmt.Fprintln(os.Stderr, "  -s             : Strip URL components (query params, fragments).")
-	fmt.Fprintln(os.Stderr, "  -d             : Extract only the domain/IP from URLs/output.")
-	fmt.Fprintln(os.Stderr, "  -t <threads>   : Number of concurrent threads (default: 1).")
+	fmt.Fprintln(os.Stderr, "  Common Options:")
+	fmt.Fprintln(os.Stderr, "    -r             : Extract redirect URLs (if available and tool supports it).")
+	fmt.Fprintln(os.Stderr, "    -s             : Strip URL components (query params, fragments).")
+	fmt.Fprintln(os.Stderr, "    -d             : Extract only the domain/IP from URLs/output.")
+	fmt.Fprintln(os.Stderr, "    -t <threads>   : Number of concurrent threads (default: 1).")
+	fmt.Fprintln(os.Stderr, "  Nmap Specific Options (if <tool_name> is 'nmap'):")
+	fmt.Fprintln(os.Stderr, "    -p             : Export IP and port pairs.")
+	fmt.Fprintln(os.Stderr, "    -o             : Filter for open ports only.")
 	fmt.Fprintln(os.Stderr, "  input_file     : Optional input file. If not provided, reads from stdin.")
 	os.Exit(1)
 }
@@ -64,6 +71,12 @@ func main() {
 	cmdFlags.BoolVar(&stripComponents, "s", false, "Strip URL components (query params, fragments)")
 	cmdFlags.BoolVar(&extractDomainOnly, "d", false, "Extract only the domain/IP from URLs/output")
 	cmdFlags.IntVar(&numThreads, "t", 1, "Number of concurrent threads")
+
+	// Add nmap specific flags
+	// These flags will be parsed if provided, but only nmap tool logic should use them.
+	// The descriptions here also clarify they are for nmap.
+	cmdFlags.BoolVar(&nmapExportIPPort, "p", false, "Export IP and port pairs (nmap only)")
+	cmdFlags.BoolVar(&nmapFilterOpenPorts, "o", false, "Filter for open ports only (nmap only)")
 
 	// Parse the flags from os.Args[2:] (arguments after the subcommand)
 	err := cmdFlags.Parse(os.Args[2:])
@@ -179,6 +192,9 @@ func main() {
 					}
 				case "nmap":
 					var nmapResults []string
+					// processNmapLine will need to be updated in parser_nmap.go
+					// to use the global nmapExportIPPort and nmapFilterOpenPorts flags.
+					// It should handle the logic: if both -p and -o are present, -o is applied first.
 					nmapResults, currentNmapIPContext = processNmapLine(line, currentNmapIPContext)
 					processedOutputs = append(processedOutputs, nmapResults...)
 				}
