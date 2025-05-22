@@ -47,7 +47,9 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  dns            Processes structured DNS record output (comma-separated). See specific options.")
 	fmt.Fprintln(os.Stderr, "                 Example: cat dns_records.csv | go_parser dns -ip")
 	fmt.Fprintln(os.Stderr, "  wafw00f        Processes wafw00f output. Extracts URL and detected WAF.")
-	fmt.Fprintln(os.Stderr, "                 Example: wafw00f -i list_of_urls.txt | go_parser wafw00f -k known\\n")
+	fmt.Fprintln(os.Stderr, "                 Example: wafw00f -i list_of_urls.txt | go_parser wafw00f -k known")
+	fmt.Fprintln(os.Stderr, "  mantra         Processes mantra output. Extracts secret and URL from found leaks.")
+	fmt.Fprintln(os.Stderr, "                 Example: mantra -u https://example.com | go_parser mantra\\n")
 
 	fmt.Fprintln(os.Stderr, "Common Options (generally not applicable to 'domain' tool directly):")
 	fmt.Fprintln(os.Stderr, "  -r             Extract redirect URLs (if tool output provides redirect info, e.g., httpx, ffuf).")
@@ -123,10 +125,10 @@ func main() {
 	// No longer need to set extractDomainOnly based on isDomainSubcommandUsed
 
 	switch toolType {
-	case "httpx", "ffuf", "dirsearch", "amass", "nmap", "dns", "wafw00f", "domain":
+	case "httpx", "ffuf", "dirsearch", "amass", "nmap", "dns", "wafw00f", "domain", "mantra":
 		// Known tool
 	default:
-		fmt.Fprintf(os.Stderr, "Error: Unsupported tool type '%s'. Supported tools are: httpx, ffuf, dirsearch, amass, nmap, dns, wafw00f, domain.\\n", toolType)
+		fmt.Fprintf(os.Stderr, "Error: Unsupported tool type '%s'. Supported tools are: httpx, ffuf, dirsearch, amass, nmap, dns, wafw00f, domain, mantra.\\n", toolType)
 		usage()
 	}
 
@@ -252,6 +254,11 @@ func main() {
 					if domainResult != "" {
 						processedOutputs = append(processedOutputs, domainResult)
 					}
+				case "mantra":
+					mantraResult := processMantraLine(line)
+					if mantraResult != "" {
+						processedOutputs = append(processedOutputs, mantraResult)
+					}
 				}
 				for _, outputItem := range processedOutputs {
 					if outputItem == "" {
@@ -272,6 +279,12 @@ func main() {
 							urlAndWaf := strings.SplitN(outputItem, " - ", 2)
 							if len(urlAndWaf) > 0 {
 								domainOrIP = getDomain(urlAndWaf[0])
+							}
+						} else if toolType == "mantra" {
+							// Output is "secret - URL"
+							secretAndURL := strings.SplitN(outputItem, " - ", 2)
+							if len(secretAndURL) == 2 {
+								domainOrIP = getDomain(secretAndURL[1]) // Get domain from URL part
 							}
 						} else {
 							domainOrIP = getDomain(outputItem)
@@ -350,3 +363,4 @@ func stripURLComponents(rawURL string) string {
 // processDnsLine is in dns.go
 // processWafw00fLine is in wafw00f.go
 // processDomainToolLine is in domain_parser.go
+// processMantraLine is in mantra_parser.go
