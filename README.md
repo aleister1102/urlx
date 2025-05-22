@@ -85,3 +85,6 @@ Options:
 --- 
 
 Happy URL extracting! 🎉 
+
+## 🔮 Future Features
+- Allow to filter by status code, content length, content type, etc.
