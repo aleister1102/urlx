@@ -1,4 +1,4 @@
-#  UwU (Extract URL) 😺🔗
+#  UwU 😺🔗
 
 `UwU` is a Go-based command-line tool designed to extract URLs from the output of various security assessment tools like `httpx`, `ffuf`, and `dirsearch`. It helps streamline the process of gathering and cleaning up URLs for further analysis.
 
