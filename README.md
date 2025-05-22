@@ -134,3 +134,6 @@ Happy URL extracting! 🎉
 - Support for:
   - amass
   - nmap (filter open ports, extract IPv6, IP:port pairs, etc)
+
+## 🐛 Bugs
+- Option `-mx` of `dns` subcommand is not working.

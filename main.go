@@ -6,8 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-
-	// "regexp" // No longer used directly in main.go
+	"sort"
 	"strings"
 	"sync"
 )
@@ -22,12 +21,18 @@ var (
 	// New nmap specific flags
 	nmapExportIPPort    bool // For nmap -p
 	nmapFilterOpenPorts bool // For nmap -o
+	// New dns specific flags
+	dnsExtractIP    bool // For dns -ip
+	dnsExtractCNAME bool // For dns -cname
+	dnsExtractMX    bool // For dns -mx
+	// Wafw00f specific flag
+	wafKindFilter string // For wafw00f -k
 )
 
 func usage() {
 	// Note: The usage message needs to be manually maintained to reflect FlagSet usage
 	fmt.Fprintf(os.Stderr, "Usage: %s <tool_name> [options] [input_file]\\n", os.Args[0])
-	fmt.Fprintln(os.Stderr, "  <tool_name>    : Specify the tool (httpx, ffuf, dirsearch, amass, nmap). Mandatory.")
+	fmt.Fprintln(os.Stderr, "  <tool_name>    : Specify the tool (httpx, ffuf, dirsearch, amass, nmap, dns, wafw00f). Mandatory.")
 	fmt.Fprintln(os.Stderr, "  Common Options:")
 	fmt.Fprintln(os.Stderr, "    -r             : Extract redirect URLs (if available and tool supports it).")
 	fmt.Fprintln(os.Stderr, "    -s             : Strip URL components (query params, fragments).")
@@ -36,6 +41,12 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  Nmap Specific Options (if <tool_name> is 'nmap'):")
 	fmt.Fprintln(os.Stderr, "    -p             : Export IP and port pairs.")
 	fmt.Fprintln(os.Stderr, "    -o             : Filter for open ports only.")
+	fmt.Fprintln(os.Stderr, "  Dns Specific Options (if <tool_name> is 'dns'):")
+	fmt.Fprintln(os.Stderr, "    -ip            : Extract IP addresses (v4 & v6), sorted and unique.")
+	fmt.Fprintln(os.Stderr, "    -cname         : Extract CNAME domain records.")
+	fmt.Fprintln(os.Stderr, "    -mx            : Extract MX domain records.")
+	fmt.Fprintln(os.Stderr, "  Wafw00f Specific Options (if <tool_name> is 'wafw00f'):")
+	fmt.Fprintln(os.Stderr, "    -k <kind>      : WAF kind to extract (none, generic, known; default: none).")
 	fmt.Fprintln(os.Stderr, "  input_file     : Optional input file. If not provided, reads from stdin.")
 	os.Exit(1)
 }
@@ -78,6 +89,14 @@ func main() {
 	cmdFlags.BoolVar(&nmapExportIPPort, "p", false, "Export IP and port pairs (nmap only)")
 	cmdFlags.BoolVar(&nmapFilterOpenPorts, "o", false, "Filter for open ports only (nmap only)")
 
+	// Add dns specific flags
+	cmdFlags.BoolVar(&dnsExtractIP, "ip", false, "Extract IP addresses (dns only)")
+	cmdFlags.BoolVar(&dnsExtractCNAME, "cname", false, "Extract CNAME records (dns only)")
+	cmdFlags.BoolVar(&dnsExtractMX, "mx", false, "Extract MX records (dns only)")
+
+	// Add wafw00f specific flag
+	cmdFlags.StringVar(&wafKindFilter, "k", "none", "WAF kind to extract (none, generic, known) (wafw00f only)")
+
 	// Parse the flags from os.Args[2:] (arguments after the subcommand)
 	err := cmdFlags.Parse(os.Args[2:])
 	if err != nil { // Handle parsing errors (though ExitOnError should handle it)
@@ -86,11 +105,24 @@ func main() {
 	}
 
 	switch toolType {
-	case "httpx", "ffuf", "dirsearch", "amass", "nmap":
+	case "httpx", "ffuf", "dirsearch", "amass", "nmap", "dns", "wafw00f":
 		// Known tool
 	default:
-		fmt.Fprintf(os.Stderr, "Error: Unsupported tool type '%s'. Supported tools are: httpx, ffuf, dirsearch, amass, nmap.\n", toolType)
+		fmt.Fprintf(os.Stderr, "Error: Unsupported tool type '%s'. Supported tools are: httpx, ffuf, dirsearch, amass, nmap, dns, wafw00f.\n", toolType)
 		usage()
+	}
+
+	// Check for dns tool specific flag requirement
+	if toolType == "dns" && !dnsExtractIP && !dnsExtractCNAME && !dnsExtractMX {
+		fmt.Fprintln(os.Stderr, "Error: For 'dns' tool, you must specify one of -ip, -cname, or -mx options.")
+		usage()
+	}
+
+	if toolType == "wafw00f" {
+		if wafKindFilter != "none" && wafKindFilter != "generic" && wafKindFilter != "known" {
+			fmt.Fprintf(os.Stderr, "Error: Invalid value for -k option: '%s'. Must be one of none, generic, or known.\n", wafKindFilter)
+			usage()
+		}
 	}
 
 	if numThreads < 1 {
@@ -197,6 +229,15 @@ func main() {
 					// It should handle the logic: if both -p and -o are present, -o is applied first.
 					nmapResults, currentNmapIPContext = processNmapLine(line, currentNmapIPContext)
 					processedOutputs = append(processedOutputs, nmapResults...)
+				case "dns":
+					// processDnsLine relies on global flags dnsExtractIP, dnsExtractCNAME, dnsExtractMX.
+					// If dnsExtractIP is true, it will return IPs. These IPs will be collected,
+					// sorted, and deduplicated in the output goroutine.
+					dnsResults := processDnsLine(line)
+					processedOutputs = append(processedOutputs, dnsResults...)
+				case "wafw00f":
+					wafw00fResults := processWafw00fLine(line)
+					processedOutputs = append(processedOutputs, wafw00fResults...)
 				}
 				for _, outputItem := range processedOutputs {
 					if outputItem == "" { // Should already be handled by individual processors, but good check
@@ -209,6 +250,12 @@ func main() {
 							ipParts := strings.SplitN(outputItem, " - ", 2) // Split at the first " - "
 							if len(ipParts) > 0 {
 								domainOrIP = strings.Trim(ipParts[0], "[]")
+							}
+						} else if toolType == "wafw00f" {
+							// For wafw00f, output is "URL - WAFName"
+							urlAndWaf := strings.SplitN(outputItem, " - ", 2)
+							if len(urlAndWaf) > 0 {
+								domainOrIP = getDomain(urlAndWaf[0])
 							}
 						} else {
 							domainOrIP = getDomain(outputItem) // Existing logic for other tools
@@ -228,8 +275,29 @@ func main() {
 	outputWg.Add(1)
 	go func() {
 		defer outputWg.Done()
-		for result := range resultsChan {
-			fmt.Println(result)
+		if toolType == "dns" && dnsExtractIP {
+			var allIPs []string
+			for result := range resultsChan {
+				allIPs = append(allIPs, result)
+			}
+			// Sort and deduplicate IPs
+			sort.Strings(allIPs)
+			uniqueIPs := make([]string, 0, len(allIPs))
+			if len(allIPs) > 0 {
+				uniqueIPs = append(uniqueIPs, allIPs[0])
+				for i := 1; i < len(allIPs); i++ {
+					if allIPs[i] != allIPs[i-1] {
+						uniqueIPs = append(uniqueIPs, allIPs[i])
+					}
+				}
+			}
+			for _, ip := range uniqueIPs {
+				fmt.Println(ip)
+			}
+		} else {
+			for result := range resultsChan {
+				fmt.Println(result)
+			}
 		}
 	}()
 
@@ -270,3 +338,7 @@ func stripURLComponents(rawURL string) string {
 // processAmassLine is now in parser_amass.go
 
 // processNmapLine is now in parser_nmap.go
+
+// processDnsLine is now in parser_dns.go
+
+// processWafw00fLine is now in wafw00f.go
