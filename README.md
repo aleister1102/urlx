@@ -1,13 +1,13 @@
 #  UwU (Extract URL) 😺🔗
 
-`UwU` is a Go-based command-line tool designed to extract URLs from the output of various security assessment tools like `httpx`, `ffuf`, `dirsearch`, and `amass`. It helps streamline the process of gathering and cleaning up URLs for further analysis.
+`UwU` is a Go-based command-line tool designed to extract URLs and other information from the output of various security assessment tools like `httpx`, `ffuf`, `dirsearch`, `amass`, and `nmap`. It helps streamline the process of gathering and cleaning up data for further analysis.
 
 ## ✨ Features
 
-*   Parses output from `httpx`, `ffuf` (CSV format), `dirsearch`, and `amass` (standard and MX record format).
-*   Optional extraction of redirect URLs (`-r`).
-*   Optional stripping of URL query parameters and fragments (`-s`).
-*   Optional extraction of only the domain name from URLs (`-d`).
+*   Parses output from `httpx`, `ffuf` (CSV format), `dirsearch`, `amass` (standard and MX record format), and `nmap` (standard scan output).
+*   Optional extraction of redirect URLs (`-r` for URL-based tools).
+*   Optional stripping of URL query parameters and fragments (`-s` for URL-based tools).
+*   Optional extraction of only the domain name (for URL-based tools) or IP address (for `nmap`) using the (`-d`) flag.
 *   Concurrent processing of input lines for faster results (`-p` or `-c` flags).
 *   Reads from a file or standard input.
 
@@ -46,10 +46,10 @@ This will download the source, compile it, and place the `uwu` (or `extracturl` 
 Usage: ./extracturl -t <tool_name> [-r] [-s] [-d] [-p <threads>] [-c <threads>] [input_file]
 
 Options:
-  -t <tool_name> : Specify the tool (httpx, ffuf, dirsearch, amass). Mandatory.
-  -r             : Extract redirect URLs (if available and tool supports it).
-  -s             : Strip URL components (query params, fragments).
-  -d             : Extract only the domain from URLs.
+  -t <tool_name> : Specify the tool (httpx, ffuf, dirsearch, amass, nmap). Mandatory.
+  -r             : Extract redirect URLs (if available and tool supports it, e.g., for httpx, dirsearch, ffuf).
+  -s             : Strip URL components (query params, fragments; e.g., for httpx, dirsearch, ffuf).
+  -d             : Extract only the domain (for URL-based tools like httpx, ffuf, dirsearch, amass) or IP address (for nmap).
   -p <threads>   : Number of parallel threads (default: 1).
   -c <threads>   : Number of concurrent threads (alias for -p, default: 1).
   input_file     : Optional input file. If not provided, reads from stdin.
@@ -100,6 +100,18 @@ Options:
     ```bash
     cat amass_active_output.txt | ./extracturl -t amass -d
     # This will attempt to extract the domain from each FQDN found in MX records.
+    ```
+
+8.  **Process `nmap` output to extract IP, port, service, version, and status:**
+    ```bash
+    nmap -sV target.com -oN nmap_output.txt
+    cat nmap_output.txt | ./extracturl -t nmap
+    # Output format: [IP_ADDRESS] - [PORT] - [SERVICE_NAME] - [VERSION] - [STATUS]
+    ```
+
+9.  **Process `nmap` output and extract only IP addresses:**
+    ```bash
+    cat nmap_output.txt | ./extracturl -t nmap -d
     ```
 
 ## 📝 Notes

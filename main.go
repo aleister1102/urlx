@@ -22,10 +22,10 @@ var (
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage: %s -t <tool_name> [-r] [-s] [-d] [-p <threads>] [-c <threads>] [input_file]\n", os.Args[0])
-	fmt.Fprintln(os.Stderr, "  -t <tool_name> : Specify the tool (httpx, ffuf, dirsearch, amass). Mandatory.")
+	fmt.Fprintln(os.Stderr, "  -t <tool_name> : Specify the tool (httpx, ffuf, dirsearch, amass, nmap). Mandatory.")
 	fmt.Fprintln(os.Stderr, "  -r             : Extract redirect URLs (if available and tool supports it).")
 	fmt.Fprintln(os.Stderr, "  -s             : Strip URL components (query params, fragments).")
-	fmt.Fprintln(os.Stderr, "  -d             : Extract only the domain from URLs.")
+	fmt.Fprintln(os.Stderr, "  -d             : Extract only the domain/IP from URLs/output.")
 	fmt.Fprintln(os.Stderr, "  -p <threads>   : Number of parallel threads (default: 1).")
 	fmt.Fprintln(os.Stderr, "  -c <threads>   : Number of concurrent threads (alias for -p)")
 	fmt.Fprintln(os.Stderr, "  input_file     : Optional input file. If not provided, reads from stdin.")
@@ -47,7 +47,7 @@ func getDomain(rawURL string) string {
 }
 
 func main() {
-	flag.StringVar(&toolType, "t", "", "Specify the tool (httpx, ffuf, dirsearch, amass)")
+	flag.StringVar(&toolType, "t", "", "Specify the tool (httpx, ffuf, dirsearch, amass, nmap)")
 	flag.BoolVar(&extractRedirect, "r", false, "Extract redirect URLs")
 	flag.BoolVar(&stripComponents, "s", false, "Strip URL components (query params, fragments)")
 	flag.BoolVar(&extractDomainOnly, "d", false, "Extract only the domain from URLs")
@@ -63,10 +63,10 @@ func main() {
 	}
 
 	switch toolType {
-	case "httpx", "ffuf", "dirsearch", "amass":
+	case "httpx", "ffuf", "dirsearch", "amass", "nmap":
 		// Known tool
 	default:
-		fmt.Fprintf(os.Stderr, "Error: Unsupported tool type '%s'. Supported tools are: httpx, ffuf, dirsearch, amass.\n", toolType)
+		fmt.Fprintf(os.Stderr, "Error: Unsupported tool type '%s'. Supported tools are: httpx, ffuf, dirsearch, amass, nmap.\n", toolType)
 		usage()
 	}
 
@@ -131,29 +131,64 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			var currentNmapIPContext string // Context for nmap IP, specific to each worker
 			for line := range linesChan {
 				if line == "" {
 					continue
 				}
-				var result string
+				var processedOutputs []string
 				switch toolType {
 				case "httpx":
-					result = processHttpxLine(line)
+					result := processHttpxLine(line)
+					if result != "" {
+						processedOutputs = append(processedOutputs, result)
+					}
 				case "ffuf":
-					result = processFfufLine(line)
+					result := processFfufLine(line)
+					if result != "" {
+						processedOutputs = append(processedOutputs, result)
+					}
 				case "dirsearch":
-					result = processDirsearchLine(line)
+					result := processDirsearchLine(line)
+					if result != "" {
+						processedOutputs = append(processedOutputs, result)
+					}
 				case "amass":
-					result = processAmassLine(line)
+					result := processAmassLine(line)
+					if result != "" {
+						potentialHostnames := strings.Split(result, "\n")
+						for _, hostname := range potentialHostnames {
+							hostname = strings.TrimSpace(hostname)
+							if hostname != "" {
+								processedOutputs = append(processedOutputs, hostname)
+							}
+						}
+					}
+				case "nmap":
+					var nmapResults []string
+					nmapResults, currentNmapIPContext = processNmapLine(line, currentNmapIPContext)
+					processedOutputs = append(processedOutputs, nmapResults...)
 				}
-				if result != "" {
+				for _, outputItem := range processedOutputs {
+					if outputItem == "" { // Should already be handled by individual processors, but good check
+						continue
+					}
 					if extractDomainOnly {
-						domain := getDomain(result)
-						if domain != "" {
-							resultsChan <- domain
+						var domainOrIP string
+						if toolType == "nmap" {
+							// Extract IP from the nmap formatted string: "[IP] - ..."
+							ipParts := strings.SplitN(outputItem, " - ", 2) // Split at the first " - "
+							if len(ipParts) > 0 {
+								domainOrIP = strings.Trim(ipParts[0], "[]")
+							}
+						} else {
+							domainOrIP = getDomain(outputItem) // Existing logic for other tools
+						}
+						if domainOrIP != "" {
+							resultsChan <- domainOrIP
 						}
 					} else {
-						resultsChan <- result
+						resultsChan <- outputItem
 					}
 				}
 			}
@@ -385,4 +420,58 @@ func processAmassLine(line string) string {
 	// We assume it's a valid hostname/FQDN if it's not an MX record line.
 	// A more robust validation could be added here if needed, e.g. using isValidURL or a similar check.
 	return line
+}
+
+// processNmapLine processes a single line of nmap output.
+// It maintains a currentIP context because nmap output is multi-line per IP.
+// Returns a slice of formatted port info strings and the new IP context.
+func processNmapLine(line string, currentIP string) ([]string, string) {
+	line = strings.TrimSpace(line)
+	var outputs []string
+	newIPContext := currentIP
+
+	// Regex to find an IP address in lines like "Nmap scan report for ..."
+	// It will capture the last IP-like pattern found on the line.
+	if strings.HasPrefix(line, "Nmap scan report for ") {
+		reportTarget := strings.TrimSpace(strings.TrimPrefix(line, "Nmap scan report for "))
+		ipExtractRegex := regexp.MustCompile(`(([0-9]{1,3}\.){3}[0-9]{1,3})`)
+		foundIPs := ipExtractRegex.FindAllString(reportTarget, -1)
+
+		if len(foundIPs) > 0 {
+			newIPContext = foundIPs[len(foundIPs)-1] // Use the last IP found on the line
+		} else {
+			// No valid IP found in the report line, keep the old IP context
+			// This means we might be parsing a hostname-only report line which we can't use for IP-based port listing as per req.
+			return outputs, currentIP // Return currentIP, not newIPContext which might be a hostname
+		}
+		return outputs, newIPContext // IP context updated, no port info from this specific line
+	}
+
+	// If newIPContext (our current IP for context) is not set, we can't process port lines effectively.
+	if newIPContext == "" {
+		return outputs, newIPContext
+	}
+
+	// Regex for port line: PORT STATE SERVICE VERSION
+	// Example: 22/tcp  open   ssh     OpenSSH 7.6p1 Ubuntu 4ubuntu0.7
+	// Example: 80/tcp  closed http
+	// Example: 53/udp  open|filtered domain
+	// Captures: 1:Port, 2:State, 3:Service, 4:Version (optional)
+	portRegex := regexp.MustCompile(`^(\d+)/(?:tcp|udp|sctp|icmp)\s+([^\s]+)\s+([^\s]+)(?:\s+(.*))?$`)
+	portMatch := portRegex.FindStringSubmatch(line)
+
+	if len(portMatch) >= 4 { // Need at least Port, State, Service
+		port := portMatch[1]
+		status := portMatch[2]
+		service := portMatch[3]
+		version := "N/A"                                                 // Default version
+		if len(portMatch) > 4 && strings.TrimSpace(portMatch[4]) != "" { // Check if version group exists and is non-empty after trim
+			version = strings.TrimSpace(portMatch[4])
+		}
+
+		formattedOutput := fmt.Sprintf("[%s] - [%s] - [%s] - [%s] - [%s]", newIPContext, port, service, version, status)
+		outputs = append(outputs, formattedOutput)
+	}
+
+	return outputs, newIPContext
 }
