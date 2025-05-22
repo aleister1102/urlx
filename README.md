@@ -1,10 +1,10 @@
-#  UwU 😺🔗
+#  UwU (Extract URL) 😺🔗
 
-`UwU` is a Go-based command-line tool designed to extract URLs from the output of various security assessment tools like `httpx`, `ffuf`, and `dirsearch`. It helps streamline the process of gathering and cleaning up URLs for further analysis.
+`UwU` is a Go-based command-line tool designed to extract URLs from the output of various security assessment tools like `httpx`, `ffuf`, `dirsearch`, and `amass`. It helps streamline the process of gathering and cleaning up URLs for further analysis.
 
 ## ✨ Features
 
-*   Parses output from `httpx`, `ffuf` (CSV format), and `dirsearch`.
+*   Parses output from `httpx`, `ffuf` (CSV format), `dirsearch`, and `amass` (standard and MX record format).
 *   Optional extraction of redirect URLs (`-r`).
 *   Optional stripping of URL query parameters and fragments (`-s`).
 *   Optional extraction of only the domain name from URLs (`-d`).
@@ -46,7 +46,7 @@ This will download the source, compile it, and place the `uwu` (or `extracturl` 
 Usage: ./extracturl -t <tool_name> [-r] [-s] [-d] [-p <threads>] [-c <threads>] [input_file]
 
 Options:
-  -t <tool_name> : Specify the tool (httpx, ffuf, dirsearch). Mandatory.
+  -t <tool_name> : Specify the tool (httpx, ffuf, dirsearch, amass). Mandatory.
   -r             : Extract redirect URLs (if available and tool supports it).
   -s             : Strip URL components (query params, fragments).
   -d             : Extract only the domain from URLs.
@@ -81,6 +81,25 @@ Options:
 4.  **Process `httpx` output and extract only domains:**
     ```bash
     cat httpx_output.txt | ./extracturl -t httpx -d
+    ```
+
+5.  **Process `amass` standard output and extract only domains:**
+    ```bash
+    amass enum -d example.com -o amass_output.txt
+    cat amass_output.txt | ./extracturl -t amass -d
+    ```
+
+6.  **Process `amass` active MX record output:**
+    ```bash
+    amass enum -d example.com -active -o amass_active_output.txt
+    cat amass_active_output.txt | ./extracturl -t amass 
+    # This will output both the source and target FQDNs from MX records on separate lines.
+    ```
+
+7.  **Process `amass` active MX record output and extract only domains:**
+    ```bash
+    cat amass_active_output.txt | ./extracturl -t amass -d
+    # This will attempt to extract the domain from each FQDN found in MX records.
     ```
 
 ## 📝 Notes
