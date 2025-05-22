@@ -22,7 +22,7 @@ var (
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage: %s -t <tool_name> [-r] [-s] [-d] [-p <threads>] [-c <threads>] [input_file]\n", os.Args[0])
-	fmt.Fprintln(os.Stderr, "  -t <tool_name> : Specify the tool (httpx, ffuf, dirsearch). Mandatory.")
+	fmt.Fprintln(os.Stderr, "  -t <tool_name> : Specify the tool (httpx, ffuf, dirsearch, amass). Mandatory.")
 	fmt.Fprintln(os.Stderr, "  -r             : Extract redirect URLs (if available and tool supports it).")
 	fmt.Fprintln(os.Stderr, "  -s             : Strip URL components (query params, fragments).")
 	fmt.Fprintln(os.Stderr, "  -d             : Extract only the domain from URLs.")
@@ -47,7 +47,7 @@ func getDomain(rawURL string) string {
 }
 
 func main() {
-	flag.StringVar(&toolType, "t", "", "Specify the tool (httpx, ffuf, dirsearch)")
+	flag.StringVar(&toolType, "t", "", "Specify the tool (httpx, ffuf, dirsearch, amass)")
 	flag.BoolVar(&extractRedirect, "r", false, "Extract redirect URLs")
 	flag.BoolVar(&stripComponents, "s", false, "Strip URL components (query params, fragments)")
 	flag.BoolVar(&extractDomainOnly, "d", false, "Extract only the domain from URLs")
@@ -63,10 +63,10 @@ func main() {
 	}
 
 	switch toolType {
-	case "httpx", "ffuf", "dirsearch":
+	case "httpx", "ffuf", "dirsearch", "amass":
 		// Known tool
 	default:
-		fmt.Fprintf(os.Stderr, "Error: Unsupported tool type '%s'. Supported tools are: httpx, ffuf, dirsearch.\n", toolType)
+		fmt.Fprintf(os.Stderr, "Error: Unsupported tool type '%s'. Supported tools are: httpx, ffuf, dirsearch, amass.\n", toolType)
 		usage()
 	}
 
@@ -143,6 +143,8 @@ func main() {
 					result = processFfufLine(line)
 				case "dirsearch":
 					result = processDirsearchLine(line)
+				case "amass":
+					result = processAmassLine(line)
 				}
 				if result != "" {
 					if extractDomainOnly {
@@ -354,4 +356,33 @@ func processDirsearchLine(line string) string {
 		return finalURL
 	}
 	return ""
+}
+
+func processAmassLine(line string) string {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return ""
+	}
+
+	// Regex for MX record lines: e.g., dev.remitly.com (FQDN) --> mx_record --> alt3.aspmx.l.google.com (FQDN)
+	mxRegex := regexp.MustCompile(`^(.*?) \(FQDN\) --> mx_record --> (.*?) \(FQDN\)$`)
+	matches := mxRegex.FindStringSubmatch(line)
+
+	if len(matches) == 3 {
+		sourceFQDN := strings.TrimSpace(matches[1])
+		targetFQDN := strings.TrimSpace(matches[2])
+		if sourceFQDN != "" && targetFQDN != "" {
+			return sourceFQDN + "\n" + targetFQDN // Return both, separated by newline
+		} else if sourceFQDN != "" {
+			return sourceFQDN
+		} else if targetFQDN != "" {
+			return targetFQDN
+		}
+		return "" // Should not happen if regex matched and parts were non-empty
+	}
+
+	// For simple FQDN lines or anything else that doesn't match the MX record pattern
+	// We assume it's a valid hostname/FQDN if it's not an MX record line.
+	// A more robust validation could be added here if needed, e.g. using isValidURL or a similar check.
+	return line
 }
