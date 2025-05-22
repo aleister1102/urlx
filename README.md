@@ -8,7 +8,7 @@
 *   Optional extraction of redirect URLs (`-r` for URL-based tools).
 *   Optional stripping of URL query parameters and fragments (`-s` for URL-based tools).
 *   Optional extraction of only the domain name (for URL-based tools) or IP address (for `nmap`) using the (`-d`) flag.
-*   Concurrent processing of input lines for faster results (`-p` or `-c` flags).
+*   Concurrent processing of input lines for faster results (`-t` flag for threads).
 *   Reads from a file or standard input.
 
 ## 🛠️ Installation
@@ -38,20 +38,25 @@ Once the project is available on GitHub (e.g., `github.com/aleister1102/uwu`), y
 go install github.com/aleister1102/uwu@latest
 ```
 
-This will download the source, compile it, and place the `uwu` (or `extracturl` if you rename the output binary in the go.mod or build process) executable in your `$GOPATH/bin` or `$HOME/go/bin` directory. Make sure this directory is in your system's `PATH`.
+This will download the source, compile it, and place the `uwu` executable in your `$GOPATH/bin` or `$HOME/go/bin` directory. Make sure this directory is in your system's `PATH`.
 
 ## 🚀 Usage
 
 ```
-Usage: ./extracturl -t <tool_name> [-r] [-s] [-d] [-p <threads>] [-c <threads>] [input_file]
+Usage: ./uwu <tool_name> [-r] [-s] [-d] [-t <threads>] [input_file]
+
+Subcommands (Tool Name):
+  httpx          Process httpx output.
+  ffuf           Process ffuf CSV output.
+  dirsearch      Process dirsearch output.
+  amass          Process amass output (standard or MX record).
+  nmap           Process nmap standard scan output.
 
 Options:
-  -t <tool_name> : Specify the tool (httpx, ffuf, dirsearch, amass, nmap). Mandatory.
   -r             : Extract redirect URLs (if available and tool supports it, e.g., for httpx, dirsearch, ffuf).
   -s             : Strip URL components (query params, fragments; e.g., for httpx, dirsearch, ffuf).
   -d             : Extract only the domain (for URL-based tools like httpx, ffuf, dirsearch, amass) or IP address (for nmap).
-  -p <threads>   : Number of parallel threads (default: 1).
-  -c <threads>   : Number of concurrent threads (alias for -p, default: 1).
+  -t <threads>   : Number of concurrent threads (default: 1).
   input_file     : Optional input file. If not provided, reads from stdin.
 ```
 
@@ -59,59 +64,59 @@ Options:
 
 1.  **Process `httpx` output from a file, strip components, using 10 threads:**
     ```bash
-    cat httpx_output.txt | ./extracturl -t httpx -s -c 10
+    cat httpx_output.txt | ./uwu httpx -s -t 10
     ```
     Alternatively:
     ```bash
-    ./extracturl -t httpx -s -c 10 httpx_output.txt
+    ./uwu httpx -s -t 10 httpx_output.txt
     ```
 
 2.  **Process `ffuf` output from stdin and extract redirect URLs:**
     ```bash
     ffuf -u https://example.com/FUZZ -w wordlist.txt -oc ffuf_results.csv -of csv
-    cat ffuf_results.csv | ./extracturl -t ffuf -r
+    cat ffuf_results.csv | ./uwu ffuf -r
     ```
 
 3.  **Process `dirsearch` output, strip components and extract redirects:**
     ```bash
     dirsearch -u https://target.com -e php,html --output=dirsearch_log.txt
-    cat dirsearch_log.txt | ./extracturl -t dirsearch -s -r
+    cat dirsearch_log.txt | ./uwu dirsearch -s -r
     ```
 
 4.  **Process `httpx` output and extract only domains:**
     ```bash
-    cat httpx_output.txt | ./extracturl -t httpx -d
+    cat httpx_output.txt | ./uwu httpx -d
     ```
 
-5.  **Process `amass` standard output and extract only domains:**
+5.  **Process `amass` standard output and extract only domains (using 5 threads):**
     ```bash
     amass enum -d example.com -o amass_output.txt
-    cat amass_output.txt | ./extracturl -t amass -d
+    cat amass_output.txt | ./uwu amass -d -t 5
     ```
 
 6.  **Process `amass` active MX record output:**
     ```bash
     amass enum -d example.com -active -o amass_active_output.txt
-    cat amass_active_output.txt | ./extracturl -t amass 
+    cat amass_active_output.txt | ./uwu amass 
     # This will output both the source and target FQDNs from MX records on separate lines.
     ```
 
 7.  **Process `amass` active MX record output and extract only domains:**
     ```bash
-    cat amass_active_output.txt | ./extracturl -t amass -d
+    cat amass_active_output.txt | ./uwu amass -d
     # This will attempt to extract the domain from each FQDN found in MX records.
     ```
 
-8.  **Process `nmap` output to extract IP, port, service, version, and status:**
+8.  **Process `nmap` output to extract IP, port, service, version, and status (using 20 threads):**
     ```bash
     nmap -sV target.com -oN nmap_output.txt
-    cat nmap_output.txt | ./extracturl -t nmap
+    cat nmap_output.txt | ./uwu nmap -t 20
     # Output format: [IP_ADDRESS] - [PORT] - [SERVICE_NAME] - [VERSION] - [STATUS]
     ```
 
 9.  **Process `nmap` output and extract only IP addresses:**
     ```bash
-    cat nmap_output.txt | ./extracturl -t nmap -d
+    cat nmap_output.txt | ./uwu nmap -d
     ```
 
 ## 📝 Notes

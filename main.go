@@ -6,28 +6,29 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"regexp"
+
+	// "regexp" // No longer used directly in main.go
 	"strings"
 	"sync"
 )
 
 var (
-	toolType          string
+	// toolType is now derived from subcommand
 	extractRedirect   bool
 	stripComponents   bool
 	extractDomainOnly bool
-	parallelThreads   int
-	inputFile         string
+	numThreads        int // Renamed from parallelThreads, set by new -t flag
+	// inputFile is now a local variable in main
 )
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "Usage: %s -t <tool_name> [-r] [-s] [-d] [-p <threads>] [-c <threads>] [input_file]\n", os.Args[0])
-	fmt.Fprintln(os.Stderr, "  -t <tool_name> : Specify the tool (httpx, ffuf, dirsearch, amass, nmap). Mandatory.")
+	// Note: The usage message needs to be manually maintained to reflect FlagSet usage
+	fmt.Fprintf(os.Stderr, "Usage: %s <tool_name> [-r] [-s] [-d] [-t <threads>] [input_file]\n", os.Args[0])
+	fmt.Fprintln(os.Stderr, "  <tool_name>    : Specify the tool (httpx, ffuf, dirsearch, amass, nmap). Mandatory.")
 	fmt.Fprintln(os.Stderr, "  -r             : Extract redirect URLs (if available and tool supports it).")
 	fmt.Fprintln(os.Stderr, "  -s             : Strip URL components (query params, fragments).")
 	fmt.Fprintln(os.Stderr, "  -d             : Extract only the domain/IP from URLs/output.")
-	fmt.Fprintln(os.Stderr, "  -p <threads>   : Number of parallel threads (default: 1).")
-	fmt.Fprintln(os.Stderr, "  -c <threads>   : Number of concurrent threads (alias for -p)")
+	fmt.Fprintln(os.Stderr, "  -t <threads>   : Number of concurrent threads (default: 1).")
 	fmt.Fprintln(os.Stderr, "  input_file     : Optional input file. If not provided, reads from stdin.")
 	os.Exit(1)
 }
@@ -47,18 +48,27 @@ func getDomain(rawURL string) string {
 }
 
 func main() {
-	flag.StringVar(&toolType, "t", "", "Specify the tool (httpx, ffuf, dirsearch, amass, nmap)")
-	flag.BoolVar(&extractRedirect, "r", false, "Extract redirect URLs")
-	flag.BoolVar(&stripComponents, "s", false, "Strip URL components (query params, fragments)")
-	flag.BoolVar(&extractDomainOnly, "d", false, "Extract only the domain from URLs")
-	flag.IntVar(&parallelThreads, "p", 1, "Number of parallel threads")
-	flag.IntVar(&parallelThreads, "c", 1, "Number of concurrent threads (alias for -p)")
+	if len(os.Args) < 2 {
+		fmt.Fprintln(os.Stderr, "Error: <tool_name> subcommand is mandatory.")
+		usage()
+	}
 
-	flag.Usage = usage
-	flag.Parse()
+	toolType := os.Args[1]
 
-	if toolType == "" {
-		fmt.Fprintln(os.Stderr, "Error: -t <tool_name> is a mandatory argument.")
+	// Create a new FlagSet for arguments after the subcommand
+	cmdFlags := flag.NewFlagSet(toolType, flag.ExitOnError)
+	cmdFlags.Usage = usage // Point to our custom usage function
+
+	// Define flags on this FlagSet, using global variables
+	cmdFlags.BoolVar(&extractRedirect, "r", false, "Extract redirect URLs")
+	cmdFlags.BoolVar(&stripComponents, "s", false, "Strip URL components (query params, fragments)")
+	cmdFlags.BoolVar(&extractDomainOnly, "d", false, "Extract only the domain/IP from URLs/output")
+	cmdFlags.IntVar(&numThreads, "t", 1, "Number of concurrent threads")
+
+	// Parse the flags from os.Args[2:] (arguments after the subcommand)
+	err := cmdFlags.Parse(os.Args[2:])
+	if err != nil { // Handle parsing errors (though ExitOnError should handle it)
+		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\n", err)
 		usage()
 	}
 
@@ -70,24 +80,27 @@ func main() {
 		usage()
 	}
 
-	if parallelThreads < 1 {
-		fmt.Fprintln(os.Stderr, "Error: -p or -c <threads> must be a positive integer.")
+	if numThreads < 1 {
+		fmt.Fprintln(os.Stderr, "Error: -t <threads> must be a positive integer.")
 		usage()
 	}
 
-	args := flag.Args()
-	if len(args) > 0 {
-		inputFile = args[0]
+	var inputFile string             // inputFile is now a local variable
+	remainingArgs := cmdFlags.Args() // Get non-flag arguments after FlagSet parsing
+	if len(remainingArgs) > 0 {
+		inputFile = remainingArgs[0]
+	} else {
+		inputFile = ""
 	}
 
 	var reader *bufio.Reader
 	var file *os.File
-	var err error
+	var err2 error
 
 	if inputFile != "" && inputFile != "-" {
-		file, err = os.Open(inputFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: Cannot read file '%s': %v\n", inputFile, err)
+		file, err2 = os.Open(inputFile)
+		if err2 != nil {
+			fmt.Fprintf(os.Stderr, "Error: Cannot read file '%s': %v\n", inputFile, err2)
 			os.Exit(1)
 		}
 		defer file.Close()
@@ -109,8 +122,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	linesChan := make(chan string, parallelThreads)
-	resultsChan := make(chan string, parallelThreads)
+	linesChan := make(chan string, numThreads)
+	resultsChan := make(chan string, numThreads)
 	var wg sync.WaitGroup
 	var outputWg sync.WaitGroup
 
@@ -127,7 +140,7 @@ func main() {
 	}()
 
 	// Worker Goroutines
-	for i := 0; i < parallelThreads; i++ {
+	for i := 0; i < numThreads; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -232,246 +245,12 @@ func stripURLComponents(rawURL string) string {
 	return u.String()
 }
 
-func processHttpxLine(line string) string {
-	parts := strings.Fields(line)
-	if len(parts) == 0 {
-		return ""
-	}
-	originalURL := parts[0]
+// processHttpxLine is now in parser_httpx.go
 
-	if !isValidURL(originalURL) {
-		return ""
-	}
+// processFfufLine is now in parser_ffuf.go
 
-	urlToProcess := originalURL
+// processDirsearchLine is now in parser_dirsearch.go
 
-	if extractRedirect {
-		re := regexp.MustCompile(`\[(https?://[^]]*)\]`)
-		matches := re.FindAllStringSubmatch(line, -1)
-		if len(matches) > 0 {
-			// Get the last match
-			lastMatch := matches[len(matches)-1]
-			if len(lastMatch) > 1 {
-				actualRedirectURL := lastMatch[1]
-				if isValidURL(actualRedirectURL) {
-					urlToProcess = actualRedirectURL
-				}
-			}
-		}
-	}
+// processAmassLine is now in parser_amass.go
 
-	finalURL := urlToProcess
-	if stripComponents {
-		finalURL = stripURLComponents(urlToProcess)
-	}
-
-	if finalURL != "" {
-		return finalURL
-	}
-	return ""
-}
-
-func processFfufLine(line string) string {
-	// Skip header lines starting with "FUZZ,"
-	if strings.HasPrefix(line, "FUZZ,") {
-		return ""
-	}
-
-	parts := strings.Split(line, ",")
-	if len(parts) < 2 {
-		return ""
-	}
-
-	var originalURL, redirectCandidate string
-
-	valAtIdx1 := parts[1]
-	var valAtIdx2, valAtIdx3 string
-	if len(parts) > 2 {
-		valAtIdx2 = parts[2]
-	}
-	if len(parts) > 3 {
-		valAtIdx3 = parts[3]
-	}
-
-	if isValidURL(valAtIdx1) {
-		// Format: FUZZ_KEYWORD,URL,REDIRECT_URL?,...
-		originalURL = valAtIdx1
-		if valAtIdx2 != "" && isValidURL(valAtIdx2) {
-			redirectCandidate = valAtIdx2
-		}
-	} else if valAtIdx2 != "" && isValidURL(valAtIdx2) {
-		// Format: FUZZ_KEYWORD,METHOD,URL,REDIRECT_URL?,...
-		originalURL = valAtIdx2
-		if valAtIdx3 != "" && isValidURL(valAtIdx3) {
-			redirectCandidate = valAtIdx3
-		}
-	} else {
-		return "" // Not a recognizable ffuf data line
-	}
-
-	if originalURL == "" {
-		return ""
-	}
-
-	urlToProcess := originalURL
-	if extractRedirect && redirectCandidate != "" {
-		urlToProcess = redirectCandidate
-	}
-
-	finalURL := urlToProcess
-	if stripComponents {
-		finalURL = stripURLComponents(urlToProcess)
-	}
-
-	if finalURL != "" {
-		return finalURL
-	}
-	return ""
-}
-
-func processDirsearchLine(line string) string {
-	if strings.HasPrefix(line, "#") {
-		return ""
-	}
-
-	fields := strings.Fields(line)
-	// Expected format: STATUS SIZE URL ... [-> REDIRECTS TO: REDIRECT_URL]
-	// We need at least 3 fields for STATUS, SIZE, URL
-	if len(fields) < 3 {
-		return ""
-	}
-
-	// The URL is usually the 3rd field (index 2)
-	originalURL := fields[2]
-	if !isValidURL(originalURL) {
-		// If the third field isn't a URL, this line isn't what we expect.
-		// The bash script tries to read status, size, initial_url_part.
-		// Let's try to be a bit more robust by finding the first valid URL.
-		foundURL := ""
-		for _, field := range fields {
-			if isValidURL(field) {
-				foundURL = field
-				break
-			}
-		}
-		if foundURL == "" {
-			return ""
-		}
-		originalURL = foundURL
-	}
-
-	var redirectURL string
-	redirectMarker := "-> REDIRECTS TO:"
-	lineStr := strings.Join(fields, " ") // Rejoin for easier searching of the marker phrase
-
-	if idx := strings.Index(lineStr, redirectMarker); idx != -1 {
-		potentialRedirect := strings.TrimSpace(lineStr[idx+len(redirectMarker):])
-		// The redirect URL might be followed by other information, so take the first space-separated token.
-		redirectParts := strings.Fields(potentialRedirect)
-		if len(redirectParts) > 0 && isValidURL(redirectParts[0]) {
-			redirectURL = redirectParts[0]
-		}
-	}
-
-	urlToProcess := originalURL
-	if extractRedirect && redirectURL != "" {
-		urlToProcess = redirectURL
-	}
-
-	if urlToProcess == "" { // Should not happen if originalURL was valid
-		return ""
-	}
-
-	finalURL := urlToProcess
-	if stripComponents {
-		finalURL = stripURLComponents(urlToProcess)
-	}
-
-	if finalURL != "" {
-		return finalURL
-	}
-	return ""
-}
-
-func processAmassLine(line string) string {
-	line = strings.TrimSpace(line)
-	if line == "" {
-		return ""
-	}
-
-	// Regex for MX record lines: e.g., dev.remitly.com (FQDN) --> mx_record --> alt3.aspmx.l.google.com (FQDN)
-	mxRegex := regexp.MustCompile(`^(.*?) \(FQDN\) --> mx_record --> (.*?) \(FQDN\)$`)
-	matches := mxRegex.FindStringSubmatch(line)
-
-	if len(matches) == 3 {
-		sourceFQDN := strings.TrimSpace(matches[1])
-		targetFQDN := strings.TrimSpace(matches[2])
-		if sourceFQDN != "" && targetFQDN != "" {
-			return sourceFQDN + "\n" + targetFQDN // Return both, separated by newline
-		} else if sourceFQDN != "" {
-			return sourceFQDN
-		} else if targetFQDN != "" {
-			return targetFQDN
-		}
-		return "" // Should not happen if regex matched and parts were non-empty
-	}
-
-	// For simple FQDN lines or anything else that doesn't match the MX record pattern
-	// We assume it's a valid hostname/FQDN if it's not an MX record line.
-	// A more robust validation could be added here if needed, e.g. using isValidURL or a similar check.
-	return line
-}
-
-// processNmapLine processes a single line of nmap output.
-// It maintains a currentIP context because nmap output is multi-line per IP.
-// Returns a slice of formatted port info strings and the new IP context.
-func processNmapLine(line string, currentIP string) ([]string, string) {
-	line = strings.TrimSpace(line)
-	var outputs []string
-	newIPContext := currentIP
-
-	// Regex to find an IP address in lines like "Nmap scan report for ..."
-	// It will capture the last IP-like pattern found on the line.
-	if strings.HasPrefix(line, "Nmap scan report for ") {
-		reportTarget := strings.TrimSpace(strings.TrimPrefix(line, "Nmap scan report for "))
-		ipExtractRegex := regexp.MustCompile(`(([0-9]{1,3}\.){3}[0-9]{1,3})`)
-		foundIPs := ipExtractRegex.FindAllString(reportTarget, -1)
-
-		if len(foundIPs) > 0 {
-			newIPContext = foundIPs[len(foundIPs)-1] // Use the last IP found on the line
-		} else {
-			// No valid IP found in the report line, keep the old IP context
-			// This means we might be parsing a hostname-only report line which we can't use for IP-based port listing as per req.
-			return outputs, currentIP // Return currentIP, not newIPContext which might be a hostname
-		}
-		return outputs, newIPContext // IP context updated, no port info from this specific line
-	}
-
-	// If newIPContext (our current IP for context) is not set, we can't process port lines effectively.
-	if newIPContext == "" {
-		return outputs, newIPContext
-	}
-
-	// Regex for port line: PORT STATE SERVICE VERSION
-	// Example: 22/tcp  open   ssh     OpenSSH 7.6p1 Ubuntu 4ubuntu0.7
-	// Example: 80/tcp  closed http
-	// Example: 53/udp  open|filtered domain
-	// Captures: 1:Port, 2:State, 3:Service, 4:Version (optional)
-	portRegex := regexp.MustCompile(`^(\d+)/(?:tcp|udp|sctp|icmp)\s+([^\s]+)\s+([^\s]+)(?:\s+(.*))?$`)
-	portMatch := portRegex.FindStringSubmatch(line)
-
-	if len(portMatch) >= 4 { // Need at least Port, State, Service
-		port := portMatch[1]
-		status := portMatch[2]
-		service := portMatch[3]
-		version := "N/A"                                                 // Default version
-		if len(portMatch) > 4 && strings.TrimSpace(portMatch[4]) != "" { // Check if version group exists and is non-empty after trim
-			version = strings.TrimSpace(portMatch[4])
-		}
-
-		formattedOutput := fmt.Sprintf("[%s] - [%s] - [%s] - [%s] - [%s]", newIPContext, port, service, version, status)
-		outputs = append(outputs, formattedOutput)
-	}
-
-	return outputs, newIPContext
-}
+// processNmapLine is now in parser_nmap.go
