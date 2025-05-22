@@ -88,3 +88,6 @@ Happy URL extracting! 🎉
 
 ## 🔮 Future Features
 - Allow to filter by status code, content length, content type, etc.
+- Support for:
+  - amass
+  - nmap (filter open ports, extract IPv6, IP:port pairs, etc)
