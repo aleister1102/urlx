@@ -7,6 +7,7 @@
 *   Parses output from `httpx`, `ffuf` (CSV format), and `dirsearch`.
 *   Optional extraction of redirect URLs (`-r`).
 *   Optional stripping of URL query parameters and fragments (`-s`).
+*   Optional extraction of only the domain name from URLs (`-d`).
 *   Concurrent processing of input lines for faster results (`-p` or `-c` flags).
 *   Reads from a file or standard input.
 
@@ -42,12 +43,13 @@ This will download the source, compile it, and place the `uwu` (or `extracturl` 
 ## 🚀 Usage
 
 ```
-Usage: ./extracturl -t <tool_name> [-r] [-s] [-p <threads>] [-c <threads>] [input_file]
+Usage: ./extracturl -t <tool_name> [-r] [-s] [-d] [-p <threads>] [-c <threads>] [input_file]
 
 Options:
   -t <tool_name> : Specify the tool (httpx, ffuf, dirsearch). Mandatory.
   -r             : Extract redirect URLs (if available and tool supports it).
   -s             : Strip URL components (query params, fragments).
+  -d             : Extract only the domain from URLs.
   -p <threads>   : Number of parallel threads (default: 1).
   -c <threads>   : Number of concurrent threads (alias for -p, default: 1).
   input_file     : Optional input file. If not provided, reads from stdin.
@@ -74,6 +76,11 @@ Options:
     ```bash
     dirsearch -u https://target.com -e php,html --output=dirsearch_log.txt
     cat dirsearch_log.txt | ./extracturl -t dirsearch -s -r
+    ```
+
+4.  **Process `httpx` output and extract only domains:**
+    ```bash
+    cat httpx_output.txt | ./extracturl -t httpx -d
     ```
 
 ## 📝 Notes

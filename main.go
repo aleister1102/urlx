@@ -12,28 +12,45 @@ import (
 )
 
 var (
-	toolType        string
-	extractRedirect bool
-	stripComponents bool
-	parallelThreads int
-	inputFile       string
+	toolType          string
+	extractRedirect   bool
+	stripComponents   bool
+	extractDomainOnly bool
+	parallelThreads   int
+	inputFile         string
 )
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "Usage: %s -t <tool_name> [-r] [-s] [-p <threads>] [-c <threads>] [input_file]\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "Usage: %s -t <tool_name> [-r] [-s] [-d] [-p <threads>] [-c <threads>] [input_file]\n", os.Args[0])
 	fmt.Fprintln(os.Stderr, "  -t <tool_name> : Specify the tool (httpx, ffuf, dirsearch). Mandatory.")
 	fmt.Fprintln(os.Stderr, "  -r             : Extract redirect URLs (if available and tool supports it).")
 	fmt.Fprintln(os.Stderr, "  -s             : Strip URL components (query params, fragments).")
+	fmt.Fprintln(os.Stderr, "  -d             : Extract only the domain from URLs.")
 	fmt.Fprintln(os.Stderr, "  -p <threads>   : Number of parallel threads (default: 1).")
 	fmt.Fprintln(os.Stderr, "  -c <threads>   : Number of concurrent threads (alias for -p)")
 	fmt.Fprintln(os.Stderr, "  input_file     : Optional input file. If not provided, reads from stdin.")
 	os.Exit(1)
 }
 
+func getDomain(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
+		rawURL = "http://" + rawURL
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
+}
+
 func main() {
 	flag.StringVar(&toolType, "t", "", "Specify the tool (httpx, ffuf, dirsearch)")
 	flag.BoolVar(&extractRedirect, "r", false, "Extract redirect URLs")
 	flag.BoolVar(&stripComponents, "s", false, "Strip URL components (query params, fragments)")
+	flag.BoolVar(&extractDomainOnly, "d", false, "Extract only the domain from URLs")
 	flag.IntVar(&parallelThreads, "p", 1, "Number of parallel threads")
 	flag.IntVar(&parallelThreads, "c", 1, "Number of concurrent threads (alias for -p)")
 
@@ -128,7 +145,14 @@ func main() {
 					result = processDirsearchLine(line)
 				}
 				if result != "" {
-					resultsChan <- result
+					if extractDomainOnly {
+						domain := getDomain(result)
+						if domain != "" {
+							resultsChan <- domain
+						}
+					} else {
+						resultsChan <- result
+					}
 				}
 			}
 		}()
