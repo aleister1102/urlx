@@ -8,6 +8,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 var (
@@ -24,6 +25,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  -r             : Extract redirect URLs (if available and tool supports it).")
 	fmt.Fprintln(os.Stderr, "  -s             : Strip URL components (query params, fragments).")
 	fmt.Fprintln(os.Stderr, "  -p <threads>   : Number of parallel threads (default: 1).")
+	fmt.Fprintln(os.Stderr, "  -c <threads>   : Number of concurrent threads (alias for -p)")
 	fmt.Fprintln(os.Stderr, "  input_file     : Optional input file. If not provided, reads from stdin.")
 	os.Exit(1)
 }
@@ -52,12 +54,8 @@ func main() {
 	}
 
 	if parallelThreads < 1 {
-		fmt.Fprintln(os.Stderr, "Error: -p <threads> must be a positive integer.")
+		fmt.Fprintln(os.Stderr, "Error: -p or -c <threads> must be a positive integer.")
 		usage()
-	}
-
-	if parallelThreads > 1 {
-		fmt.Fprintln(os.Stderr, "Warning: Parallel/concurrent processing (via -p or -c > 1) is specified, but the execution logic is not yet implemented. Processing will be sequential.")
 	}
 
 	args := flag.Args()
@@ -94,29 +92,61 @@ func main() {
 		os.Exit(1)
 	}
 
-	processLines(reader)
-}
+	linesChan := make(chan string, parallelThreads)
+	resultsChan := make(chan string, parallelThreads)
+	var wg sync.WaitGroup
+	var outputWg sync.WaitGroup
 
-func processLines(reader *bufio.Reader) {
-	scanner := bufio.NewScanner(reader)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			continue
+	// Input Goroutine
+	go func() {
+		scanner := bufio.NewScanner(reader)
+		for scanner.Scan() {
+			linesChan <- scanner.Text()
 		}
+		if err := scanner.Err(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
+		}
+		close(linesChan)
+	}()
 
-		switch toolType {
-		case "httpx":
-			processHttpxLine(line)
-		case "ffuf":
-			processFfufLine(line)
-		case "dirsearch":
-			processDirsearchLine(line)
+	// Worker Goroutines
+	for i := 0; i < parallelThreads; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for line := range linesChan {
+				if line == "" {
+					continue
+				}
+				var result string
+				switch toolType {
+				case "httpx":
+					result = processHttpxLine(line)
+				case "ffuf":
+					result = processFfufLine(line)
+				case "dirsearch":
+					result = processDirsearchLine(line)
+				}
+				if result != "" {
+					resultsChan <- result
+				}
+			}
+		}()
+	}
+
+	// Output/Printer Goroutine
+	outputWg.Add(1)
+	go func() {
+		defer outputWg.Done()
+		for result := range resultsChan {
+			fmt.Println(result)
 		}
-	}
-	if err := scanner.Err(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
-	}
+	}()
+
+	// Waiting and Cleanup
+	wg.Wait()          // Wait for all workers to finish processing
+	close(resultsChan) // Signal to the printer goroutine that no more results are coming
+	outputWg.Wait()    // Wait for the printer goroutine to finish printing all results
 }
 
 func isValidURL(toTest string) bool {
@@ -141,15 +171,15 @@ func stripURLComponents(rawURL string) string {
 	return u.String()
 }
 
-func processHttpxLine(line string) {
+func processHttpxLine(line string) string {
 	parts := strings.Fields(line)
 	if len(parts) == 0 {
-		return
+		return ""
 	}
 	originalURL := parts[0]
 
 	if !isValidURL(originalURL) {
-		return
+		return ""
 	}
 
 	urlToProcess := originalURL
@@ -175,19 +205,20 @@ func processHttpxLine(line string) {
 	}
 
 	if finalURL != "" {
-		fmt.Println(finalURL)
+		return finalURL
 	}
+	return ""
 }
 
-func processFfufLine(line string) {
+func processFfufLine(line string) string {
 	// Skip header lines starting with "FUZZ,"
 	if strings.HasPrefix(line, "FUZZ,") {
-		return
+		return ""
 	}
 
 	parts := strings.Split(line, ",")
 	if len(parts) < 2 {
-		return
+		return ""
 	}
 
 	var originalURL, redirectCandidate string
@@ -214,11 +245,11 @@ func processFfufLine(line string) {
 			redirectCandidate = valAtIdx3
 		}
 	} else {
-		return // Not a recognizable ffuf data line
+		return "" // Not a recognizable ffuf data line
 	}
 
 	if originalURL == "" {
-		return
+		return ""
 	}
 
 	urlToProcess := originalURL
@@ -232,20 +263,21 @@ func processFfufLine(line string) {
 	}
 
 	if finalURL != "" {
-		fmt.Println(finalURL)
+		return finalURL
 	}
+	return ""
 }
 
-func processDirsearchLine(line string) {
+func processDirsearchLine(line string) string {
 	if strings.HasPrefix(line, "#") {
-		return
+		return ""
 	}
 
 	fields := strings.Fields(line)
 	// Expected format: STATUS SIZE URL ... [-> REDIRECTS TO: REDIRECT_URL]
 	// We need at least 3 fields for STATUS, SIZE, URL
 	if len(fields) < 3 {
-		return
+		return ""
 	}
 
 	// The URL is usually the 3rd field (index 2)
@@ -262,7 +294,7 @@ func processDirsearchLine(line string) {
 			}
 		}
 		if foundURL == "" {
-			return
+			return ""
 		}
 		originalURL = foundURL
 	}
@@ -286,7 +318,7 @@ func processDirsearchLine(line string) {
 	}
 
 	if urlToProcess == "" { // Should not happen if originalURL was valid
-		return
+		return ""
 	}
 
 	finalURL := urlToProcess
@@ -295,6 +327,7 @@ func processDirsearchLine(line string) {
 	}
 
 	if finalURL != "" {
-		fmt.Println(finalURL)
+		return finalURL
 	}
+	return ""
 }
