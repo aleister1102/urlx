@@ -56,10 +56,8 @@
 
 ### Using `go install` (from a future GitHub repository)
 
-Once the project is available on GitHub (e.g., `github.com/yourusername/uwu`), you can install it directly:
-
 ```bash
-go install github.com/yourusername/uwu@latest
+go install github.com/aleister1102/uwu@latest
 ```
 
 This will download the source, compile it, and place the `uwu` executable in your `$GOPATH/bin` or `$HOME/go/bin` directory. Make sure this directory is in your system's `PATH`.
