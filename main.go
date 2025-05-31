@@ -34,7 +34,7 @@ var (
 )
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "\\nUsage: %s <tool_name> [options] [input_file]\\n\\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "Usage: %s <tool_name> [options] [input_file]\\n\\n", os.Args[0])
 
 	fmt.Fprintln(os.Stderr, "Available Tools:")
 	fmt.Fprintln(os.Stderr, "  domain         Extracts domain/IP from a list of URLs.")
@@ -145,7 +145,7 @@ func main() {
 	case "httpx", "ffuf", "dirsearch", "amass", "nmap", "dns", "wafw00f", "domain", "mantra":
 		// Known tool
 	default:
-		fmt.Fprintf(os.Stderr, "Error: Unsupported tool type '%s'. Supported tools are: httpx, ffuf, dirsearch, amass, nmap, dns, wafw00f, domain, mantra.\\n", toolType)
+		fmt.Fprintf(os.Stderr, "Error: Unsupported tool type '%s'. Supported tools are: httpx, ffuf, dirsearch, amass, nmap, dns, wafw00f, domain, mantra.\n", toolType)
 		usage()
 	}
 
@@ -156,7 +156,7 @@ func main() {
 
 	if toolType == "wafw00f" {
 		if wafKindFilter != "none" && wafKindFilter != "generic" && wafKindFilter != "known" {
-			fmt.Fprintf(os.Stderr, "Error: Invalid value for -k option: '%s'. Must be one of none, generic, or known.\\n", wafKindFilter)
+			fmt.Fprintf(os.Stderr, "Error: Invalid value for -k option: '%s'. Must be one of none, generic, or known.\n", wafKindFilter)
 			usage()
 		}
 	}
