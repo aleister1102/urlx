@@ -34,7 +34,7 @@ var (
 )
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "Usage: %s <tool_name> [options] [input_file]\\n\\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "\\nUsage: %s <tool_name> [options] [input_file]\\n\\n", os.Args[0])
 
 	fmt.Fprintln(os.Stderr, "Available Tools:")
 	fmt.Fprintln(os.Stderr, "  domain         Extracts domain/IP from a list of URLs.")
