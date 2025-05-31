@@ -69,16 +69,16 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "Dns Specific Options ('dns' tool only - must choose one):")
 	fmt.Fprintln(os.Stderr, "  -ip            Extract IP addresses (A/AAAA records), sorted and unique.")
 	fmt.Fprintln(os.Stderr, "  -cname         Extract CNAME domain records (the canonical name).")
-	fmt.Fprintln(os.Stderr, "  -mx            Extract MX domain records (the mail exchange hostname).\n")
+	fmt.Fprintln(os.Stderr, "  -mx            Extract MX domain records (the mail exchange hostname).\\n")
 
 	fmt.Fprintln(os.Stderr, "Wafw00f Specific Options ('wafw00f' tool only):")
-	fmt.Fprintln(os.Stderr, "  -k <kind>      WAF kind to extract: 'none', 'generic', or 'known' (default: 'none').\n")
+	fmt.Fprintln(os.Stderr, "  -k <kind>      WAF kind to extract: 'none', 'generic', or 'known' (default: 'none').\\n")
 
 	fmt.Fprintln(os.Stderr, "FFUF Specific Options ('ffuf' tool only):")
 	fmt.Fprintln(os.Stderr, "  -f             Process all files in the current directory as ffuf input.")
 	fmt.Fprintln(os.Stderr, "  -fc <codes>    Comma-separated list of status codes to filter out (e.g., 403,404).")
 	fmt.Fprintln(os.Stderr, "  -fcl <lengths> Comma-separated list of content lengths to filter out (e.g., 0,123).")
-	fmt.Fprintln(os.Stderr, "  -fct <types>   Comma-separated list of content types to filter out (e.g., text/html,application/json).\n")
+	fmt.Fprintln(os.Stderr, "  -fct <types>   Comma-separated list of content types to filter out (e.g., text/html,application/json).\\n")
 
 	fmt.Fprintln(os.Stderr, "Input:")
 	fmt.Fprintln(os.Stderr, "  [input_file]   Optional. File to read input from. If omitted or '-', reads from stdin.")
