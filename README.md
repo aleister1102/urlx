@@ -19,11 +19,12 @@
     *   Extract redirect URLs (`-r` for applicable tools like `httpx`, `ffuf`).
     *   Strip URL components (query params, fragments) (`-s`).
     *   Extract only domain/IP from final output (`-d`). For `mantra`, this extracts the domain from the URL part of the "secret - URL" pair.
+    *   Filter for URLs with an IP host and extract just the IP address (`-ip`).
 *   `nmap` specific options:
     *   Export IP and port pairs (`-p`).
     *   Filter for open ports only (`-o`).
 *   `dns` specific options (mutually exclusive):
-    *   Extract IP addresses (A/AAAA), sorted and unique (`-ip`).
+    *   Extract IP addresses (A/AAAA), sorted and unique (`-a`).
     *   Extract CNAME records (`-cname`).
     *   Extract MX domain records (mail exchange hostnames) (`-mx`).
 *   `wafw00f` specific options:
@@ -82,7 +83,7 @@ Available Tools:
   nmap           Processes nmap output (standard -oN or -oG). Extracts IP, port, service, version.
                  Example: nmap -sV example.com | ./uwu nmap -o -p
   dns            Processes structured DNS record output (comma-separated). See specific options.
-                 Example: cat dns_records.csv | ./uwu dns -ip
+                 Example: cat dns_records.csv | ./uwu dns -a
   wafw00f        Processes wafw00f output. Extracts URL and detected WAF.
                  Example: wafw00f -i list_of_urls.txt | ./uwu wafw00f -k known
   mantra         Processes mantra output. Extracts secret and URL from found leaks.
@@ -94,6 +95,7 @@ Common Options (generally not applicable to 'domain' tool directly):
   -r             Extract redirect URLs (if tool output provides redirect info, e.g., httpx, ffuf).
   -s             Strip URL components (query parameters and fragments) before further processing or output.
   -d             Extract only domain/IP from the final processed output. (Note: 'domain' tool inherently does this).
+  -ip            Filters for URLs with an IP host and extracts just the IP address.
   -t <threads>   Number of concurrent processing threads (default: 1).
 
 Nmap Specific Options ('nmap' tool only):
@@ -101,7 +103,7 @@ Nmap Specific Options ('nmap' tool only):
   -o             Filter for open ports only. Applied before -p if both are used.
 
 Dns Specific Options ('dns' tool only - must choose one):
-  -ip            Extract IP addresses (A/AAAA records), sorted and unique.
+  -a             Extract IP addresses (A/AAAA records), sorted and unique.
   -cname         Extract CNAME domain records (the canonical name).
   -mx            Extract MX domain records (the mail exchange hostname).
 
@@ -128,7 +130,7 @@ Input:
 3.  **Extract only IPv4/IPv6 addresses from `dns` tool output (comma-separated format):**
     ```bash
     # Assuming dns_output.csv has lines like: query.com,A,N/A,1.2.3.4,...
-    cat dns_output.csv | ./uwu dns -ip
+    cat dns_output.csv | ./uwu dns -a
     ```
 
 4.  **Process `wafw00f` output to find sites with a 'known' WAF:**
@@ -164,10 +166,10 @@ Input:
     # Expected output: URLs found by nuclei scans
     ```
 
-9.  **Process `nuclei` output and extract only domains:**
+9.  **Process `nuclei` output and extract only IP addresses from URLs:**
     ```bash
-    nuclei -l targets.txt | ./uwu nuclei -d
-    # Expected output: domains from nuclei scan results
+    nuclei -l targets.txt | ./uwu nuclei -ip
+    # Expected output: A list of unique IP addresses from the URLs
     ```
 
 ## 📝 Notes
