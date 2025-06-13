@@ -6,7 +6,10 @@ import (
 
 // processNucleiLine processes a single line of nuclei output.
 // Format: [template-id] [protocol] [severity] URL
-// Extracts the URL from the end of each line.
+//
+//	or: [template-id] [protocol] [severity] URL ["version"]
+//
+// Extracts the URL from each line.
 func processNucleiLine(line string) string {
 	line = strings.TrimSpace(line)
 	if line == "" {
@@ -24,10 +27,18 @@ func processNucleiLine(line string) string {
 		return "" // Not enough parts for the expected format
 	}
 
-	// The URL should be the last part
-	urlCandidate := parts[len(parts)-1]
+	// Try to get URL from the 4th position (index 3) first
+	// This handles the format: [template-id] [protocol] [severity] URL ["version"]
+	if len(parts) >= 4 {
+		urlCandidate := parts[3]
+		if isValidURL(urlCandidate) {
+			return urlCandidate
+		}
+	}
 
-	// Validate if it's a proper URL
+	// Fallback: try the last part for backward compatibility
+	// This handles the format: [template-id] [protocol] [severity] URL
+	urlCandidate := parts[len(parts)-1]
 	if isValidURL(urlCandidate) {
 		return urlCandidate
 	}
