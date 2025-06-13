@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// Các biến cờ dnsExtractIP, dnsExtractCNAME, dnsExtractMX được định nghĩa toàn cục trong main.go
+// Các biến cờ dnsExtractA, dnsExtractCNAME, dnsExtractMX được định nghĩa toàn cục trong main.go
 // và được sử dụng ở đây để quyết định cách xử lý dòng.
 
 // processDnsLine xử lý một dòng output từ tool dns.
@@ -22,10 +22,10 @@ func processDnsLine(line string) []string {
 
 	var results []string
 
-	// Nếu cờ -ip được kích hoạt, nó sẽ được ưu tiên cho việc tạo output từ hàm này.
-	// Các cờ khác (-cname, -mx) sẽ bị bỏ qua nếu -ip được đặt,
+	// Nếu cờ -a được kích hoạt, nó sẽ được ưu tiên cho việc tạo output từ hàm này.
+	// Các cờ khác (-cname, -mx) sẽ bị bỏ qua nếu -a được đặt,
 	// vì trích xuất IP là một chế độ riêng biệt.
-	if dnsExtractIP {
+	if dnsExtractA {
 		if recordType == "A" || recordType == "AAAA" {
 			if parsedIP := net.ParseIP(value); parsedIP != nil {
 				results = append(results, value)
@@ -35,8 +35,8 @@ func processDnsLine(line string) []string {
 		return results
 	}
 
-	// Nếu -ip không được kích hoạt, xử lý các cờ -cname và -mx.
-	// main.go sẽ đảm bảo rằng một trong ba tùy chọn (-ip, -cname, -mx) được chọn.
+	// Nếu -a không được kích hoạt, xử lý các cờ -cname và -mx.
+	// main.go sẽ đảm bảo rằng một trong ba tùy chọn (-a, -cname, -mx) được chọn.
 
 	if dnsExtractCNAME && recordType == "CNAME" {
 		// Đối với bản ghi CNAME, 'value' (parts[3]) là tên canonical.

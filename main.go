@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"sort"
@@ -15,12 +16,13 @@ var (
 	extractRedirect   bool
 	stripComponents   bool
 	extractDomainOnly bool // Flag -d, áp dụng cho các tool khác domain
+	filterIPHost      bool
 	numThreads        int
 	// Nmap specific flags
 	nmapExportIPPort    bool
 	nmapFilterOpenPorts bool
 	// Dns specific flags
-	dnsExtractIP    bool
+	dnsExtractA     bool
 	dnsExtractCNAME bool
 	dnsExtractMX    bool
 	// Wafw00f specific flag
@@ -62,6 +64,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  -r             Extract redirect URLs (if tool output provides redirect info, e.g., httpx, ffuf).")
 	fmt.Fprintln(os.Stderr, "  -s             Strip URL components (query parameters and fragments) before further processing or output.")
 	fmt.Fprintln(os.Stderr, "  -d             Extract only domain/IP from the final processed output. (Note: 'domain' tool inherently does this).")
+	fmt.Fprintln(os.Stderr, "  -ip            Filters for URLs with an IP host and extracts just the IP address.")
 	fmt.Fprintln(os.Stderr, "  -t <threads>   Number of concurrent processing threads (default: 1).\\n")
 
 	fmt.Fprintln(os.Stderr, "Nmap Specific Options ('nmap' tool only):")
@@ -69,7 +72,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  -o             Filter for open ports only. Applied before -p if both are used.\\n")
 
 	fmt.Fprintln(os.Stderr, "Dns Specific Options ('dns' tool only - must choose one):")
-	fmt.Fprintln(os.Stderr, "  -ip            Extract IP addresses (A/AAAA records), sorted and unique.")
+	fmt.Fprintln(os.Stderr, "  -a             Extract IP addresses (A/AAAA records), sorted and unique.")
 	fmt.Fprintln(os.Stderr, "  -cname         Extract CNAME domain records (the canonical name).")
 	fmt.Fprintln(os.Stderr, "  -mx            Extract MX domain records (the mail exchange hostname).\\n")
 
@@ -117,13 +120,14 @@ func main() {
 	cmdFlags.BoolVar(&extractRedirect, "r", false, "Extract redirect URLs")
 	cmdFlags.BoolVar(&stripComponents, "s", false, "Strip URL components")
 	cmdFlags.BoolVar(&extractDomainOnly, "d", false, "Extract only domain/IP from URLs/output (for relevant tools)")
+	cmdFlags.BoolVar(&filterIPHost, "ip", false, "Filter for URLs with an IP host and extracts just the IP address.")
 	cmdFlags.IntVar(&numThreads, "t", 1, "Number of concurrent threads")
 
 	// Tool-specific flags
 	cmdFlags.BoolVar(&nmapExportIPPort, "p", false, "Export IP and port pairs (nmap only)")
 	cmdFlags.BoolVar(&nmapFilterOpenPorts, "o", false, "Filter for open ports only (nmap only)")
 
-	cmdFlags.BoolVar(&dnsExtractIP, "ip", false, "Extract IP addresses (dns only)")
+	cmdFlags.BoolVar(&dnsExtractA, "a", false, "Extract A/AAAA records (dns only)")
 	cmdFlags.BoolVar(&dnsExtractCNAME, "cname", false, "Extract CNAME records (dns only)")
 	cmdFlags.BoolVar(&dnsExtractMX, "mx", false, "Extract MX records (dns only)")
 
@@ -151,8 +155,8 @@ func main() {
 		usage()
 	}
 
-	if toolType == "dns" && !dnsExtractIP && !dnsExtractCNAME && !dnsExtractMX {
-		fmt.Fprintln(os.Stderr, "Error: For 'dns' tool, you must specify one of -ip, -cname, or -mx options.")
+	if toolType == "dns" && !dnsExtractA && !dnsExtractCNAME && !dnsExtractMX {
+		fmt.Fprintln(os.Stderr, "Error: For 'dns' tool, you must specify one of -a, -cname, or -mx options.")
 		usage()
 	}
 
@@ -341,33 +345,23 @@ func main() {
 					if outputItem == "" {
 						continue
 					}
-					// Nếu tool là 'domain', nó đã tự trích xuất domain rồi.
-					// Đối với các tool khác, kiểm tra cờ extractDomainOnly.
-					if toolType == "domain" {
-						resultsChan <- outputItem // outputItem đã là domain/IP
-					} else if extractDomainOnly {
-						var domainOrIP string
-						if toolType == "nmap" {
-							ipParts := strings.SplitN(outputItem, " - ", 2)
-							if len(ipParts) > 0 {
-								domainOrIP = strings.Trim(ipParts[0], "[]")
-							}
-						} else if toolType == "wafw00f" {
-							urlAndWaf := strings.SplitN(outputItem, " - ", 2)
-							if len(urlAndWaf) > 0 {
-								domainOrIP = getDomain(urlAndWaf[0])
-							}
-						} else if toolType == "mantra" {
-							// Output is "secret - URL"
-							secretAndURL := strings.SplitN(outputItem, " - ", 2)
-							if len(secretAndURL) == 2 {
-								domainOrIP = getDomain(secretAndURL[1]) // Get domain from URL part
-							}
-						} else {
-							domainOrIP = getDomain(outputItem)
+
+					host := getHost(outputItem, toolType)
+
+					// If -ip is used, it filters AND extracts the IP, overriding other logic.
+					if filterIPHost {
+						if host != "" && isIP(host) {
+							resultsChan <- host // Send only the IP and move to the next item
 						}
-						if domainOrIP != "" {
-							resultsChan <- domainOrIP
+						continue // If it's not an IP, we skip it entirely because -ip is active.
+					}
+
+					// The rest of the logic runs only if -ip is NOT used.
+					if toolType == "domain" {
+						resultsChan <- outputItem // outputItem is already a domain/IP
+					} else if extractDomainOnly {
+						if host != "" {
+							resultsChan <- host
 						}
 					} else {
 						resultsChan <- outputItem
@@ -380,7 +374,7 @@ func main() {
 	outputWg.Add(1)
 	go func() {
 		defer outputWg.Done()
-		if toolType == "dns" && dnsExtractIP {
+		if toolType == "dns" && dnsExtractA {
 			var allIPs []string
 			for result := range resultsChan {
 				allIPs = append(allIPs, result)
@@ -430,6 +424,41 @@ func stripURLComponents(rawURL string) string {
 	u.RawQuery = ""
 	u.Fragment = ""
 	return u.String()
+}
+
+func isIP(s string) bool {
+	return net.ParseIP(s) != nil
+}
+
+// getHost extracts the host/IP from a tool's output line.
+// This is used by the -ip filter and the -d (extract domain) logic.
+func getHost(outputItem string, toolType string) string {
+	var host string
+	if toolType == "nmap" {
+		if strings.Contains(outputItem, " - ") {
+			// Full format: [IP] - ...
+			ipParts := strings.SplitN(outputItem, " - ", 2)
+			if len(ipParts) > 0 {
+				host = strings.Trim(ipParts[0], "[]")
+			}
+		} else {
+			// IP:port format from -p flag
+			host = getDomain(outputItem)
+		}
+	} else if toolType == "wafw00f" {
+		urlAndWaf := strings.SplitN(outputItem, " - ", 2)
+		if len(urlAndWaf) > 0 {
+			host = getDomain(urlAndWaf[0])
+		}
+	} else if toolType == "mantra" {
+		secretAndURL := strings.SplitN(outputItem, " - ", 2)
+		if len(secretAndURL) == 2 {
+			host = getDomain(secretAndURL[1])
+		}
+	} else { // httpx, ffuf, dirsearch, nuclei, amass, domain
+		host = getDomain(outputItem)
+	}
+	return host
 }
 
 // processHttpxLine is in parser_httpx.go
