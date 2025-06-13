@@ -13,6 +13,7 @@
     *   `dns` (structured comma-separated DNS records)
     *   `wafw00f` (URL and detected WAF)
     *   `mantra` (extracts secrets and associated URLs from lines indicating found leaks)
+    *   `nuclei` (extracts URLs from scan results)
 *   `domain` tool: Extracts domain/IP directly from a list of input URLs.
 *   Common processing options:
     *   Extract redirect URLs (`-r` for applicable tools like `httpx`, `ffuf`).
@@ -86,6 +87,8 @@ Available Tools:
                  Example: wafw00f -i list_of_urls.txt | ./uwu wafw00f -k known
   mantra         Processes mantra output. Extracts secret and URL from found leaks.
                  Example: mantra -u https://example.com | ./uwu mantra
+  nuclei         Processes nuclei output. Extracts URLs from scan results.
+                 Example: nuclei -l targets.txt | ./uwu nuclei
 
 Common Options (generally not applicable to 'domain' tool directly):
   -r             Extract redirect URLs (if tool output provides redirect info, e.g., httpx, ffuf).
@@ -153,6 +156,18 @@ Input:
     ```bash
     cat mantra_output.txt | ./uwu mantra -d
     # Expected output: example.com
+    ```
+
+8.  **Process `nuclei` output to extract URLs from scan results:**
+    ```bash
+    nuclei -l targets.txt | ./uwu nuclei
+    # Expected output: URLs found by nuclei scans
+    ```
+
+9.  **Process `nuclei` output and extract only domains:**
+    ```bash
+    nuclei -l targets.txt | ./uwu nuclei -d
+    # Expected output: domains from nuclei scan results
     ```
 
 ## 📝 Notes

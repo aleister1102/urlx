@@ -54,7 +54,9 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  wafw00f        Processes wafw00f output. Extracts URL and detected WAF.")
 	fmt.Fprintln(os.Stderr, "                 Example: wafw00f -i list_of_urls.txt | go_parser wafw00f -k known")
 	fmt.Fprintln(os.Stderr, "  mantra         Processes mantra output. Extracts secret and URL from found leaks.")
-	fmt.Fprintln(os.Stderr, "                 Example: mantra -u https://example.com | go_parser mantra\\n")
+	fmt.Fprintln(os.Stderr, "                 Example: mantra -u https://example.com | go_parser mantra")
+	fmt.Fprintln(os.Stderr, "  nuclei         Processes nuclei output. Extracts URLs from scan results.")
+	fmt.Fprintln(os.Stderr, "                 Example: nuclei -l targets.txt | go_parser nuclei\\n")
 
 	fmt.Fprintln(os.Stderr, "Common Options (generally not applicable to 'domain' tool directly):")
 	fmt.Fprintln(os.Stderr, "  -r             Extract redirect URLs (if tool output provides redirect info, e.g., httpx, ffuf).")
@@ -142,10 +144,10 @@ func main() {
 	// No longer need to set extractDomainOnly based on isDomainSubcommandUsed
 
 	switch toolType {
-	case "httpx", "ffuf", "dirsearch", "amass", "nmap", "dns", "wafw00f", "domain", "mantra":
+	case "httpx", "ffuf", "dirsearch", "amass", "nmap", "dns", "wafw00f", "domain", "mantra", "nuclei":
 		// Known tool
 	default:
-		fmt.Fprintf(os.Stderr, "Error: Unsupported tool type '%s'. Supported tools are: httpx, ffuf, dirsearch, amass, nmap, dns, wafw00f, domain, mantra.\n", toolType)
+		fmt.Fprintf(os.Stderr, "Error: Unsupported tool type '%s'. Supported tools are: httpx, ffuf, dirsearch, amass, nmap, dns, wafw00f, domain, mantra, nuclei.\n", toolType)
 		usage()
 	}
 
@@ -329,6 +331,11 @@ func main() {
 					if mantraResult != "" {
 						processedOutputs = append(processedOutputs, mantraResult)
 					}
+				case "nuclei":
+					nucleiResult := processNucleiLine(line)
+					if nucleiResult != "" {
+						processedOutputs = append(processedOutputs, nucleiResult)
+					}
 				}
 				for _, outputItem := range processedOutputs {
 					if outputItem == "" {
@@ -434,3 +441,4 @@ func stripURLComponents(rawURL string) string {
 // processWafw00fLine is in wafw00f.go
 // processDomainToolLine is in domain_parser.go
 // processMantraLine is in mantra_parser.go
+// processNucleiLine is in nuclei.go
