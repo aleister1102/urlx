@@ -64,7 +64,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  -r             Extract redirect URLs (if tool output provides redirect info, e.g., httpx, ffuf).")
 	fmt.Fprintln(os.Stderr, "  -s             Strip URL components (query parameters and fragments) before further processing or output.")
 	fmt.Fprintln(os.Stderr, "  -d             Extract only domain/IP from the final processed output. (Note: 'domain' tool inherently does this).")
-	fmt.Fprintln(os.Stderr, "  -ip            Filters for URLs with an IP host and extracts just the IP address.")
+	fmt.Fprintln(os.Stderr, "  -ip            Filters for URLs with an IP host and extracts the IP address and port (e.g., 1.2.3.4:443).")
 	fmt.Fprintln(os.Stderr, "  -t <threads>   Number of concurrent processing threads (default: 1).\\n")
 
 	fmt.Fprintln(os.Stderr, "Nmap Specific Options ('nmap' tool only):")
@@ -120,7 +120,7 @@ func main() {
 	cmdFlags.BoolVar(&extractRedirect, "r", false, "Extract redirect URLs")
 	cmdFlags.BoolVar(&stripComponents, "s", false, "Strip URL components")
 	cmdFlags.BoolVar(&extractDomainOnly, "d", false, "Extract only domain/IP from URLs/output (for relevant tools)")
-	cmdFlags.BoolVar(&filterIPHost, "ip", false, "Filter for URLs with an IP host and extracts just the IP address.")
+	cmdFlags.BoolVar(&filterIPHost, "ip", false, "Filter for URLs with an IP host and extract IP:port.")
 	cmdFlags.IntVar(&numThreads, "t", 1, "Number of concurrent threads")
 
 	// Tool-specific flags
@@ -346,17 +346,18 @@ func main() {
 						continue
 					}
 
-					host := getHost(outputItem, toolType)
-
-					// If -ip is used, it filters AND extracts the IP, overriding other logic.
+					// If -ip is used, it filters AND extracts the IP:port, overriding other logic.
 					if filterIPHost {
-						if host != "" && isIP(host) {
-							resultsChan <- host // Send only the IP and move to the next item
+						ipWithPort := getIPHostWithPort(outputItem, toolType)
+						if ipWithPort != "" {
+							resultsChan <- ipWithPort
 						}
-						continue // If it's not an IP, we skip it entirely because -ip is active.
+						continue // Processed with -ip, move to next item.
 					}
 
 					// The rest of the logic runs only if -ip is NOT used.
+					host := getHost(outputItem, toolType)
+
 					if toolType == "domain" {
 						resultsChan <- outputItem // outputItem is already a domain/IP
 					} else if extractDomainOnly {
@@ -459,6 +460,65 @@ func getHost(outputItem string, toolType string) string {
 		host = getDomain(outputItem)
 	}
 	return host
+}
+
+// getIPHostWithPort extracts the host:port from a tool's output line if the host is an IP.
+func getIPHostWithPort(outputItem string, toolType string) string {
+	// For nmap, the output can be either "IP:port" or "[IP] - [port] - ..."
+	if toolType == "nmap" {
+		if strings.Contains(outputItem, " - ") { // Full format
+			parts := strings.SplitN(outputItem, " - ", 3) // Split into IP, port, rest
+			if len(parts) >= 2 {
+				ip := strings.Trim(parts[0], "[]")
+				port := strings.Trim(parts[1], "[]")
+				if isIP(ip) {
+					return ip + ":" + port
+				}
+			}
+		} else { // Assumes IP:port format from -p flag
+			host, _, err := net.SplitHostPort(outputItem)
+			if err == nil && isIP(host) {
+				return outputItem
+			}
+		}
+		return "" // If nmap output couldn't be parsed for IP:port
+	}
+
+	var urlToParse string
+	// For other tools, we extract the URL part first
+	switch toolType {
+	case "wafw00f":
+		urlAndWaf := strings.SplitN(outputItem, " - ", 2)
+		if len(urlAndWaf) > 0 {
+			urlToParse = urlAndWaf[0]
+		}
+	case "mantra":
+		secretAndURL := strings.SplitN(outputItem, " - ", 2)
+		if len(secretAndURL) == 2 {
+			urlToParse = secretAndURL[1]
+		}
+	default: // httpx, ffuf, dirsearch, nuclei, etc.
+		urlToParse = outputItem
+	}
+
+	if urlToParse == "" {
+		return ""
+	}
+
+	// Now parse the URL and check if host is IP
+	if !strings.HasPrefix(urlToParse, "http://") && !strings.HasPrefix(urlToParse, "https://") {
+		urlToParse = "http://" + urlToParse
+	}
+	u, err := url.Parse(urlToParse)
+	if err != nil {
+		return ""
+	}
+
+	if isIP(u.Hostname()) {
+		return u.Host // u.Host is "hostname:port"
+	}
+
+	return ""
 }
 
 // processHttpxLine is in parser_httpx.go

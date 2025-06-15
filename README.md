@@ -19,7 +19,7 @@
     *   Extract redirect URLs (`-r` for applicable tools like `httpx`, `ffuf`).
     *   Strip URL components (query params, fragments) (`-s`).
     *   Extract only domain/IP from final output (`-d`). For `mantra`, this extracts the domain from the URL part of the "secret - URL" pair.
-    *   Filter for URLs with an IP host and extract just the IP address (`-ip`).
+    *   Filter for URLs with an IP host and extracts the IP address and port (e.g., `1.2.3.4:443`) (`-ip`).
 *   `nmap` specific options:
     *   Export IP and port pairs (`-p`).
     *   Filter for open ports only (`-o`).
@@ -95,7 +95,7 @@ Common Options (generally not applicable to 'domain' tool directly):
   -r             Extract redirect URLs (if tool output provides redirect info, e.g., httpx, ffuf).
   -s             Strip URL components (query parameters and fragments) before further processing or output.
   -d             Extract only domain/IP from the final processed output. (Note: 'domain' tool inherently does this).
-  -ip            Filters for URLs with an IP host and extracts just the IP address.
+  -ip            Filters for URLs with an IP host and extracts the IP address and port (e.g., 1.2.3.4:443).
   -t <threads>   Number of concurrent processing threads (default: 1).
 
 Nmap Specific Options ('nmap' tool only):
@@ -166,10 +166,10 @@ Input:
     # Expected output: URLs found by nuclei scans
     ```
 
-9.  **Process `nuclei` output and extract only IP addresses from URLs:**
+9.  **Process `nuclei` output and extract only IP addresses and their ports from URLs:**
     ```bash
     nuclei -l targets.txt | ./uwu nuclei -ip
-    # Expected output: A list of unique IP addresses from the URLs
+    # Expected output: A list of unique IP:port pairs (e.g., 91.184.63.175:3000) from the URLs
     ```
 
 ## 📝 Notes
