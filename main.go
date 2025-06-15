@@ -13,11 +13,12 @@ import (
 )
 
 var (
-	extractRedirect   bool
-	stripComponents   bool
-	extractDomainOnly bool // Flag -d, áp dụng cho các tool khác domain
-	filterIPHost      bool
-	numThreads        int
+	extractRedirect     bool
+	stripComponents     bool
+	extractHostnameOnly bool // Flag -hn, áp dụng cho các tool khác domain (đổi tên từ -d)
+	extractDomainOnly   bool // Flag -d, extract URLs có hostname là domain/subdomain (không phải IP)
+	filterIPHost        bool
+	numThreads          int
 	// Nmap specific flags
 	nmapExportIPPort    bool
 	nmapFilterOpenPorts bool
@@ -62,8 +63,9 @@ func usage() {
 
 	fmt.Fprintln(os.Stderr, "Common Options (generally not applicable to 'domain' tool directly):")
 	fmt.Fprintln(os.Stderr, "  -r             Extract redirect URLs (if tool output provides redirect info, e.g., httpx, ffuf).")
-	fmt.Fprintln(os.Stderr, "  -s             Strip URL components (query parameters and fragments) before further processing or output.")
-	fmt.Fprintln(os.Stderr, "  -d             Extract only domain/IP from the final processed output. (Note: 'domain' tool inherently does this).")
+	fmt.Fprintln(os.Stderr, "  -s             Strip URL components (path, query parameters and fragments) before further processing or output.")
+	fmt.Fprintln(os.Stderr, "  -d             Extract URLs with domain/subdomain hostname (excludes IPs, auto-strips path/query/fragment).")
+	fmt.Fprintln(os.Stderr, "  -hn            Extract only hostname/IP from the final processed output. (Note: 'domain' tool inherently does this).")
 	fmt.Fprintln(os.Stderr, "  -ip            Filters for URLs with an IP host and extracts the IP address and port (e.g., 1.2.3.4:443).")
 	fmt.Fprintln(os.Stderr, "  -t <threads>   Number of concurrent processing threads (default: 1).\\n")
 
@@ -116,10 +118,11 @@ func main() {
 	cmdFlags := flag.NewFlagSet(toolType, flag.ExitOnError)
 	cmdFlags.Usage = usage
 
-	// Define common flags. Note: -d is defined here but its primary effect is for tools other than 'domain'.
+	// Define common flags. Note: -hn is defined here but its primary effect is for tools other than 'domain'.
 	cmdFlags.BoolVar(&extractRedirect, "r", false, "Extract redirect URLs")
 	cmdFlags.BoolVar(&stripComponents, "s", false, "Strip URL components")
-	cmdFlags.BoolVar(&extractDomainOnly, "d", false, "Extract only domain/IP from URLs/output (for relevant tools)")
+	cmdFlags.BoolVar(&extractDomainOnly, "d", false, "Extract URLs with domain/subdomain hostname (not IP)")
+	cmdFlags.BoolVar(&extractHostnameOnly, "hn", false, "Extract only domain/IP from URLs/output (for relevant tools)")
 	cmdFlags.BoolVar(&filterIPHost, "ip", false, "Filter for URLs with an IP host and extract IP:port.")
 	cmdFlags.IntVar(&numThreads, "t", 1, "Number of concurrent threads")
 
@@ -355,12 +358,21 @@ func main() {
 						continue // Processed with -ip, move to next item.
 					}
 
-					// The rest of the logic runs only if -ip is NOT used.
+					// If -d is used, it filters for URLs with domain/subdomain hostnames (not IPs)
+					if extractDomainOnly {
+						domainURL := getDomainHostWithPort(outputItem, toolType)
+						if domainURL != "" {
+							resultsChan <- domainURL
+						}
+						continue // Processed with -d, move to next item.
+					}
+
+					// The rest of the logic runs only if -ip and -d are NOT used.
 					host := getHost(outputItem, toolType)
 
 					if toolType == "domain" {
 						resultsChan <- outputItem // outputItem is already a domain/IP
-					} else if extractDomainOnly {
+					} else if extractHostnameOnly {
 						if host != "" {
 							resultsChan <- host
 						}
@@ -422,6 +434,7 @@ func stripURLComponents(rawURL string) string {
 	if err != nil {
 		return rawURL
 	}
+	u.Path = ""
 	u.RawQuery = ""
 	u.Fragment = ""
 	return u.String()
@@ -429,6 +442,64 @@ func stripURLComponents(rawURL string) string {
 
 func isIP(s string) bool {
 	return net.ParseIP(s) != nil
+}
+
+// getDomainHostWithPort extracts the host:port from a tool's output line if the host is NOT an IP (i.e., is a domain/subdomain).
+func getDomainHostWithPort(outputItem string, toolType string) string {
+	var urlToParse string
+	// For different tools, we extract the URL part first
+	switch toolType {
+	case "nmap":
+		if strings.Contains(outputItem, " - ") {
+			// Full format: [IP] - ...
+			ipParts := strings.SplitN(outputItem, " - ", 2)
+			if len(ipParts) > 0 {
+				host := strings.Trim(ipParts[0], "[]")
+				if !isIP(host) {
+					return host // Return the domain/hostname
+				}
+			}
+		} else {
+			// IP:port format from -p flag
+			host, _, err := net.SplitHostPort(outputItem)
+			if err == nil && !isIP(host) {
+				return outputItem // Return full host:port if it's a domain
+			}
+		}
+		return ""
+	case "wafw00f":
+		urlAndWaf := strings.SplitN(outputItem, " - ", 2)
+		if len(urlAndWaf) > 0 {
+			urlToParse = urlAndWaf[0]
+		}
+	case "mantra":
+		secretAndURL := strings.SplitN(outputItem, " - ", 2)
+		if len(secretAndURL) == 2 {
+			urlToParse = secretAndURL[1]
+		}
+	default: // httpx, ffuf, dirsearch, nuclei, etc.
+		urlToParse = outputItem
+	}
+
+	if urlToParse == "" {
+		return ""
+	}
+
+	// Now parse the URL and check if host is NOT an IP (i.e., is a domain)
+	if !strings.HasPrefix(urlToParse, "http://") && !strings.HasPrefix(urlToParse, "https://") {
+		urlToParse = "http://" + urlToParse
+	}
+	u, err := url.Parse(urlToParse)
+	if err != nil {
+		return ""
+	}
+
+	if !isIP(u.Hostname()) && u.Hostname() != "" {
+		// Always strip components for domain URLs when using -d flag
+		return stripURLComponents(urlToParse)
+	}
+
+	return ""
 }
 
 // getHost extracts the host/IP from a tool's output line.

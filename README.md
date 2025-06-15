@@ -17,8 +17,9 @@
 *   `domain` tool: Extracts domain/IP directly from a list of input URLs.
 *   Common processing options:
     *   Extract redirect URLs (`-r` for applicable tools like `httpx`, `ffuf`).
-    *   Strip URL components (query params, fragments) (`-s`).
-    *   Extract only domain/IP from final output (`-d`). For `mantra`, this extracts the domain from the URL part of the "secret - URL" pair.
+    *   Strip URL components (path, query params, fragments) (`-s`).
+    *   Extract URLs with domain/subdomain hostname (excludes IPs, auto-strips path/query/fragment) (`-d`).
+*   Extract only hostname/IP from final output (`-hn`). For `mantra`, this extracts the hostname from the URL part of the "secret - URL" pair.
     *   Filter for URLs with an IP host and extracts the IP address and port (e.g., `1.2.3.4:443`) (`-ip`).
 *   `nmap` specific options:
     *   Export IP and port pairs (`-p`).
@@ -93,8 +94,9 @@ Available Tools:
 
 Common Options (generally not applicable to 'domain' tool directly):
   -r             Extract redirect URLs (if tool output provides redirect info, e.g., httpx, ffuf).
-  -s             Strip URL components (query parameters and fragments) before further processing or output.
-  -d             Extract only domain/IP from the final processed output. (Note: 'domain' tool inherently does this).
+  -s             Strip URL components (path, query parameters and fragments) before further processing or output.
+  -d             Extract URLs with domain/subdomain hostname (excludes IPs, auto-strips path/query/fragment).
+  -hn            Extract only hostname/IP from the final processed output. (Note: 'domain' tool inherently does this).
   -ip            Filters for URLs with an IP host and extracts the IP address and port (e.g., 1.2.3.4:443).
   -t <threads>   Number of concurrent processing threads (default: 1).
 
@@ -116,9 +118,9 @@ Input:
 
 ### Examples
 
-1.  **Process `httpx` output, strip components, extract domains, using 10 threads:**
+1.  **Process `httpx` output, strip components, extract hostnames, using 10 threads:**
     ```bash
-    cat httpx_output.txt | ./uwu httpx -s -d -t 10
+    cat httpx_output.txt | ./uwu httpx -s -hn -t 10
     ```
 
 2.  **Process `nmap` output, filter for open ports, and extract IP:Port pairs:**
@@ -154,19 +156,26 @@ Input:
     # Expected output: API_KEY_XYZ123 - https://example.com/api.js
     ```
 
-7.  **Process `mantra` output and extract only the domain from the identified URLs:**
+7.  **Process `mantra` output and extract only the hostname from the identified URLs:**
     ```bash
-    cat mantra_output.txt | ./uwu mantra -d
+    cat mantra_output.txt | ./uwu mantra -hn
     # Expected output: example.com
     ```
 
-8.  **Process `nuclei` output to extract URLs from scan results:**
+8.  **Process `httpx` output and extract only URLs with domain/subdomain hostnames (excludes IP addresses):**
+    ```bash
+    cat httpx_output.txt | ./uwu httpx -d
+    # Expected output: URLs like https://example.com:8080 but not https://192.168.1.1:8080
+    # Note: -d flag automatically strips path, query parameters, and fragments
+    ```
+
+9.  **Process `nuclei` output to extract URLs from scan results:**
     ```bash
     nuclei -l targets.txt | ./uwu nuclei
     # Expected output: URLs found by nuclei scans
     ```
 
-9.  **Process `nuclei` output and extract only IP addresses and their ports from URLs:**
+10. **Process `nuclei` output and extract only IP addresses and their ports from URLs:**
     ```bash
     nuclei -l targets.txt | ./uwu nuclei -ip
     # Expected output: A list of unique IP:port pairs (e.g., 91.184.63.175:3000) from the URLs
