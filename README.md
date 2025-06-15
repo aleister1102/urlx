@@ -18,7 +18,7 @@
 *   Common processing options:
     *   Extract redirect URLs (`-r` for applicable tools like `httpx`, `ffuf`).
     *   Strip URL components (path, query params, fragments) (`-s`).
-    *   Extract URLs with domain/subdomain hostname (excludes IPs, auto-strips path/query/fragment) (`-d`).
+    *   Extract domain/subdomain hostnames with port (excludes IPs, strips scheme/path/query/fragment) (`-d`).
 *   Extract only hostname/IP from final output (`-hn`). For `mantra`, this extracts the hostname from the URL part of the "secret - URL" pair.
     *   Filter for URLs with an IP host and extracts the IP address and port (e.g., `1.2.3.4:443`) (`-ip`).
 *   `nmap` specific options:
@@ -95,7 +95,7 @@ Available Tools:
 Common Options (generally not applicable to 'domain' tool directly):
   -r             Extract redirect URLs (if tool output provides redirect info, e.g., httpx, ffuf).
   -s             Strip URL components (path, query parameters and fragments) before further processing or output.
-  -d             Extract URLs with domain/subdomain hostname (excludes IPs, auto-strips path/query/fragment).
+  -d             Extract domain/subdomain hostnames with port (excludes IPs, strips scheme/path/query/fragment).
   -hn            Extract only hostname/IP from the final processed output. (Note: 'domain' tool inherently does this).
   -ip            Filters for URLs with an IP host and extracts the IP address and port (e.g., 1.2.3.4:443).
   -t <threads>   Number of concurrent processing threads (default: 1).
@@ -162,11 +162,11 @@ Input:
     # Expected output: example.com
     ```
 
-8.  **Process `httpx` output and extract only URLs with domain/subdomain hostnames (excludes IP addresses):**
+8.  **Process `httpx` output and extract only domain/subdomain hostnames (excludes IP addresses):**
     ```bash
     cat httpx_output.txt | ./uwu httpx -d
-    # Expected output: URLs like https://example.com:8080 but not https://192.168.1.1:8080
-    # Note: -d flag automatically strips path, query parameters, and fragments
+    # Expected output: domain:port like example.com:8080 but not 192.168.1.1:8080
+    # Note: -d flag strips scheme, path, query parameters, and fragments
     ```
 
 9.  **Process `nuclei` output to extract URLs from scan results:**

@@ -64,7 +64,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "Common Options (generally not applicable to 'domain' tool directly):")
 	fmt.Fprintln(os.Stderr, "  -r             Extract redirect URLs (if tool output provides redirect info, e.g., httpx, ffuf).")
 	fmt.Fprintln(os.Stderr, "  -s             Strip URL components (path, query parameters and fragments) before further processing or output.")
-	fmt.Fprintln(os.Stderr, "  -d             Extract URLs with domain/subdomain hostname (excludes IPs, auto-strips path/query/fragment).")
+	fmt.Fprintln(os.Stderr, "  -d             Extract domain/subdomain hostnames with port (excludes IPs, strips scheme/path/query/fragment).")
 	fmt.Fprintln(os.Stderr, "  -hn            Extract only hostname/IP from the final processed output. (Note: 'domain' tool inherently does this).")
 	fmt.Fprintln(os.Stderr, "  -ip            Filters for URLs with an IP host and extracts the IP address and port (e.g., 1.2.3.4:443).")
 	fmt.Fprintln(os.Stderr, "  -t <threads>   Number of concurrent processing threads (default: 1).\\n")
@@ -495,8 +495,8 @@ func getDomainHostWithPort(outputItem string, toolType string) string {
 	}
 
 	if !isIP(u.Hostname()) && u.Hostname() != "" {
-		// Always strip components for domain URLs when using -d flag
-		return stripURLComponents(urlToParse)
+		// For -d flag, return only host:port (without scheme)
+		return u.Host // u.Host includes port if present
 	}
 
 	return ""
