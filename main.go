@@ -28,11 +28,14 @@ var (
 	dnsExtractMX    bool
 	// Wafw00f specific flag
 	wafKindFilter string
-	// Ffuf specific flags
-	ffufProcessFolder        bool
-	ffufFilterStatusCodes    string
-	ffufFilterContentTypes   string
-	ffufFilterContentLengths string
+	// Ffuf & Httpx specific flags
+	ffufProcessFolder    bool
+	filterStatusCodes    string
+	filterContentTypes   string
+	filterContentLengths string
+	matchStatusCodes     string
+	matchContentTypes    string
+	matchContentLengths  string
 	// isDomainSubcommandUsed // No longer needed
 )
 
@@ -81,11 +84,14 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "Wafw00f Specific Options ('wafw00f' tool only):")
 	fmt.Fprintln(os.Stderr, "  -k <kind>      WAF kind to extract: 'none', 'generic', or 'known' (default: 'none').\\n")
 
-	fmt.Fprintln(os.Stderr, "FFUF Specific Options ('ffuf' tool only):")
-	fmt.Fprintln(os.Stderr, "  -f             Process all files in the current directory as ffuf input.")
-	fmt.Fprintln(os.Stderr, "  -fc <codes>    Comma-separated list of status codes to filter out (e.g., 403,404).")
-	fmt.Fprintln(os.Stderr, "  -fcl <lengths> Comma-separated list of content lengths to filter out (e.g., 0,123).")
-	fmt.Fprintln(os.Stderr, "  -fct <types>   Comma-separated list of content types to filter out (e.g., text/html,application/json).\\n")
+	fmt.Fprintln(os.Stderr, "Filtering & Matching Options ('ffuf', 'httpx'):")
+	fmt.Fprintln(os.Stderr, "  -f             Process all files in the current directory as ffuf input (ffuf only).")
+	fmt.Fprintln(os.Stderr, "  -fc <codes>    Filter out responses with these status codes (e.g., 403,404).")
+	fmt.Fprintln(os.Stderr, "  -fcl <lengths> Filter out responses with these content lengths (e.g., 0,123).")
+	fmt.Fprintln(os.Stderr, "  -fct <types>   Filter out responses with these content types (e.g., text/html).")
+	fmt.Fprintln(os.Stderr, "  -mc <codes>    Match responses with these status codes (e.g., 200,302).")
+	fmt.Fprintln(os.Stderr, "  -mcl <lengths> Match responses with these content lengths (e.g., 512,1024).")
+	fmt.Fprintln(os.Stderr, "  -mct <types>   Match responses with these content types (e.g., application/json).\\n")
 
 	fmt.Fprintln(os.Stderr, "Input:")
 	fmt.Fprintln(os.Stderr, "  [input_file]   Optional. File to read input from. If omitted or '-', reads from stdin.")
@@ -136,11 +142,14 @@ func main() {
 
 	cmdFlags.StringVar(&wafKindFilter, "k", "none", "WAF kind to extract (none, generic, known) (wafw00f only)")
 
-	// Ffuf specific flags
+	// Ffuf/Httpx specific flags
 	cmdFlags.BoolVar(&ffufProcessFolder, "f", false, "Process all files in current directory (ffuf only)")
-	cmdFlags.StringVar(&ffufFilterStatusCodes, "fc", "", "Comma-separated status codes to filter out (ffuf only)")
-	cmdFlags.StringVar(&ffufFilterContentTypes, "fct", "", "Comma-separated content types to filter out (ffuf only)")
-	cmdFlags.StringVar(&ffufFilterContentLengths, "fcl", "", "Comma-separated content lengths to filter out (ffuf only)")
+	cmdFlags.StringVar(&filterStatusCodes, "fc", "", "Comma-separated status codes to filter out (ffuf, httpx only)")
+	cmdFlags.StringVar(&filterContentTypes, "fct", "", "Comma-separated content types to filter out (ffuf, httpx only)")
+	cmdFlags.StringVar(&filterContentLengths, "fcl", "", "Comma-separated content lengths to filter out (ffuf, httpx only)")
+	cmdFlags.StringVar(&matchStatusCodes, "mc", "", "Comma-separated status codes to match (ffuf, httpx only)")
+	cmdFlags.StringVar(&matchContentTypes, "mct", "", "Comma-separated content types to match (ffuf, httpx only)")
+	cmdFlags.StringVar(&matchContentLengths, "mcl", "", "Comma-separated content lengths to match (ffuf, httpx only)")
 
 	err := cmdFlags.Parse(argsForFlags)
 	if err != nil {
@@ -293,12 +302,12 @@ func main() {
 				var processedOutputs []string
 				switch toolType {
 				case "httpx":
-					result := processHttpxLine(line)
+					result := processHttpxLine(line, filterStatusCodes, filterContentTypes, filterContentLengths, matchStatusCodes, matchContentTypes, matchContentLengths)
 					if result != "" {
 						processedOutputs = append(processedOutputs, result)
 					}
 				case "ffuf":
-					result := processFfufLine(line, ffufFilterStatusCodes, ffufFilterContentTypes, ffufFilterContentLengths)
+					result := processFfufLine(line, filterStatusCodes, filterContentTypes, filterContentLengths, matchStatusCodes, matchContentTypes, matchContentLengths)
 					if result != "" {
 						processedOutputs = append(processedOutputs, result)
 					}

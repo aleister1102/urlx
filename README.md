@@ -21,6 +21,13 @@
     *   Extract domain/subdomain hostnames with port (excludes IPs, strips scheme/path/query/fragment) (`-d`).
 *   Extract only hostname/IP from final output (`-hn`). For `mantra`, this extracts the hostname from the URL part of the "secret - URL" pair.
     *   Filter for URLs with an IP host and extracts the IP address and port (e.g., `1.2.3.4:443`) (`-ip`).
+*   `httpx` & `ffuf` specific filter options:
+    *   Filter by status codes (`-fc`).
+    *   Filter by content length (`-fcl`).
+    *   Filter by content type (`-fct`).
+    *   Match by status codes (`-mc`).
+    *   Match by content length (`-mcl`).
+    *   Match by content type (`-mct`).
 *   `nmap` specific options:
     *   Export IP and port pairs (`-p`).
     *   Filter for open ports only (`-o`).
@@ -112,6 +119,15 @@ Dns Specific Options ('dns' tool only - must choose one):
 Wafw00f Specific Options ('wafw00f' tool only):
   -k <kind>      WAF kind to extract: 'none', 'generic', or 'known' (default: 'none').
 
+Filtering & Matching Options ('ffuf', 'httpx' tools):
+  -f             Process all files in the current directory as ffuf input (ffuf only).
+  -fc <codes>    Filter out responses with these status codes (e.g., 403,404).
+  -fcl <lengths> Filter out responses with these content lengths (e.g., 0,123).
+  -fct <types>   Filter out responses with these content types (e.g., text/html).
+  -mc <codes>    Match responses with these status codes (e.g., 200,302).
+  -mcl <lengths> Match responses with these content lengths (e.g., 512,1024).
+  -mct <types>   Match responses with these content types (e.g., application/json).
+
 Input:
   [input_file]   Optional. File to read input from. If omitted or '-', reads from stdin.
 ```
@@ -123,31 +139,41 @@ Input:
     cat httpx_output.txt | ./uwu httpx -s -hn -t 10
     ```
 
-2.  **Process `nmap` output, filter for open ports, and extract IP:Port pairs:**
+2.  **Process `httpx` output, matching only for 200 status codes:**
+    ```bash
+    cat httpx_output.txt | ./uwu httpx -mc 200
+    ```
+
+3.  **Process `ffuf` output, matching 200 codes and filtering out `text/html` content type:**
+    ```bash
+    cat ffuf_output.csv | ./uwu ffuf -mc 200 -fct text/html
+    ```
+
+4.  **Process `nmap` output, filter for open ports, and extract IP:Port pairs:**
     ```bash
     nmap -sV target.com -oN nmap_output.txt
     cat nmap_output.txt | ./uwu nmap -o -p
     ```
 
-3.  **Extract only IPv4/IPv6 addresses from `dns` tool output (comma-separated format):**
+5.  **Extract only IPv4/IPv6 addresses from `dns` tool output (comma-separated format):**
     ```bash
     # Assuming dns_output.csv has lines like: query.com,A,N/A,1.2.3.4,...
     cat dns_output.csv | ./uwu dns -a
     ```
 
-4.  **Process `wafw00f` output to find sites with a 'known' WAF:**
+6.  **Process `wafw00f` output to find sites with a 'known' WAF:**
     ```bash
     wafw00f -i list_of_urls.txt | ./uwu wafw00f -k known
     # Output: http://example.com - Cloudflare
     ```
 
-5.  **Extract domains directly from a list of URLs using the `domain` tool:**
+7.  **Extract domains directly from a list of URLs using the `domain` tool:**
     ```bash
     echo "https://example.com/path?query=true" | ./uwu domain
     # Output: example.com
     ```
 
-6.  **Process `mantra` output to extract secrets and URLs:**
+8.  **Process `mantra` output to extract secrets and URLs:**
     ```bash
     # Assuming mantra_output.txt contains lines like:
     # [1;32m[+] [37m https://example.com/api.js  [1;32m[ [37mAPI_KEY_XYZ123 [1;32m] [37m
@@ -156,26 +182,26 @@ Input:
     # Expected output: API_KEY_XYZ123 - https://example.com/api.js
     ```
 
-7.  **Process `mantra` output and extract only the hostname from the identified URLs:**
+9.  **Process `mantra` output and extract only the hostname from the identified URLs:**
     ```bash
     cat mantra_output.txt | ./uwu mantra -hn
     # Expected output: example.com
     ```
 
-8.  **Process `httpx` output and extract only domain/subdomain hostnames (excludes IP addresses):**
+10. **Process `httpx` output and extract only domain/subdomain hostnames (excludes IP addresses):**
     ```bash
     cat httpx_output.txt | ./uwu httpx -d
     # Expected output: domain:port like example.com:8080 but not 192.168.1.1:8080
     # Note: -d flag strips scheme, path, query parameters, and fragments
     ```
 
-9.  **Process `nuclei` output to extract URLs from scan results:**
+11. **Process `nuclei` output to extract URLs from scan results:**
     ```bash
     nuclei -l targets.txt | ./uwu nuclei
     # Expected output: URLs found by nuclei scans
     ```
 
-10. **Process `nuclei` output and extract only IP addresses and their ports from URLs:**
+12. **Process `nuclei` output and extract only IP addresses and their ports from URLs:**
     ```bash
     nuclei -l targets.txt | ./uwu nuclei -ip
     # Expected output: A list of unique IP:port pairs (e.g., 91.184.63.175:3000) from the URLs
@@ -195,11 +221,12 @@ Input:
 Happy URL extracting! 🎉
 
 ## 🔮 Future Features
-- Allow to filter by status code, content length, content type, etc.
+- Allow to filter by status code, content length, content type, etc. for more tools.
 - Support for:
   - [x] amass
   - [x] nmap (filter open ports, extract IPv6, IP:port pairs, etc)
-  - [ ] ffuf for a directory (process all files in the current directory), filter by code, content-type, length, etc.
+  - [x] ffuf (process folder, filter by code, content-type, length)
+  - [x] httpx (filter by code, content-type, length)
 
 ## 🐛 Bugs
 - Option `-mx` of `dns` subcommand is not working.
