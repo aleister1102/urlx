@@ -10,27 +10,21 @@ import (
 	"sort"
 	"strings"
 	"sync"
-
-	"github.com/fatih/color"
 )
 
 var (
-	extractRedirect     bool
-	stripComponents     bool
-	extractHostnameOnly bool // Flag -hn, áp dụng cho các tool khác domain (đổi tên từ -d)
-	extractDomainOnly   bool // Flag -d, extract URLs có hostname là domain/subdomain (không phải IP)
-	filterIPHost        bool
-	numThreads          int
-	// Nmap specific flags
-	nmapExportIPPort    bool
-	nmapFilterOpenPorts bool
-	// Dns specific flags
-	dnsExtractA     bool
-	dnsExtractCNAME bool
-	dnsExtractMX    bool
-	// Wafw00f specific flag
-	wafKindFilter string
-	// Ffuf & Httpx specific flags
+	extractRedirect      bool
+	stripComponents      bool
+	extractHostnameOnly  bool
+	extractDomainOnly    bool
+	filterIPHost         bool
+	numThreads           int
+	nmapExportIPPort     bool
+	nmapFilterOpenPorts  bool
+	dnsExtractA          bool
+	dnsExtractCNAME      bool
+	dnsExtractMX         bool
+	wafKindFilter        string
 	ffufProcessFolder    bool
 	filterStatusCodes    string
 	filterContentTypes   string
@@ -39,13 +33,7 @@ var (
 	matchContentTypes    string
 	matchContentLengths  string
 	preserveContent      bool
-	noColor              bool
 )
-
-type ProcessedItem struct {
-	Output     string
-	Highlights []string
-}
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage: %s <tool_name> [options] [input_file]\\n\\n", os.Args[0])
@@ -100,8 +88,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  -mc <codes>    Match responses with these status codes (e.g., 200,302).")
 	fmt.Fprintln(os.Stderr, "  -mcl <lengths> Match responses with these content lengths (e.g., 512,1024).")
 	fmt.Fprintln(os.Stderr, "  -mct <types>   Match responses with these content types (e.g., application/json).")
-	fmt.Fprintln(os.Stderr, "  -pc            Preserve original line content on match (instead of extracting URL) (ffuf, httpx only).")
-	fmt.Fprintln(os.Stderr, "  -nc            Disable color output.\\n")
+	fmt.Fprintln(os.Stderr, "  -pc            Preserve original line content on match (instead of extracting URL) (ffuf, httpx only).\\n")
 
 	fmt.Fprintln(os.Stderr, "Input:")
 	fmt.Fprintln(os.Stderr, "  [input_file]   Optional. File to read input from. If omitted or '-', reads from stdin.")
@@ -134,7 +121,6 @@ func main() {
 	cmdFlags := flag.NewFlagSet(toolType, flag.ExitOnError)
 	cmdFlags.Usage = usage
 
-	// Define common flags. Note: -hn is defined here but its primary effect is for tools other than 'domain'.
 	cmdFlags.BoolVar(&extractRedirect, "r", false, "Extract redirect URLs")
 	cmdFlags.BoolVar(&stripComponents, "s", false, "Strip URL components")
 	cmdFlags.BoolVar(&extractDomainOnly, "d", false, "Extract URLs with domain/subdomain hostname (not IP)")
@@ -142,7 +128,6 @@ func main() {
 	cmdFlags.BoolVar(&filterIPHost, "ip", false, "Filter for URLs with an IP host and extract IP:port.")
 	cmdFlags.IntVar(&numThreads, "t", 1, "Number of concurrent threads")
 
-	// Tool-specific flags
 	cmdFlags.BoolVar(&nmapExportIPPort, "p", false, "Export IP and port pairs (nmap only)")
 	cmdFlags.BoolVar(&nmapFilterOpenPorts, "o", false, "Filter for open ports only (nmap only)")
 
@@ -152,7 +137,6 @@ func main() {
 
 	cmdFlags.StringVar(&wafKindFilter, "k", "none", "WAF kind to extract (none, generic, known) (wafw00f only)")
 
-	// Ffuf/Httpx specific flags
 	cmdFlags.BoolVar(&ffufProcessFolder, "f", false, "Process all files in current directory (ffuf only)")
 	cmdFlags.StringVar(&filterStatusCodes, "fc", "", "Comma-separated status codes to filter out (ffuf, httpx only)")
 	cmdFlags.StringVar(&filterContentTypes, "fct", "", "Comma-separated content types to filter out (ffuf, httpx only)")
@@ -161,15 +145,12 @@ func main() {
 	cmdFlags.StringVar(&matchContentTypes, "mct", "", "Comma-separated content types to match (ffuf, httpx only)")
 	cmdFlags.StringVar(&matchContentLengths, "mcl", "", "Comma-separated content lengths to match (ffuf, httpx only)")
 	cmdFlags.BoolVar(&preserveContent, "pc", false, "Preserve original line content on match (httpx, ffuf only)")
-	cmdFlags.BoolVar(&noColor, "nc", false, "Disable color output")
 
 	err := cmdFlags.Parse(argsForFlags)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\\n", err)
 		usage()
 	}
-
-	// No longer need to set extractDomainOnly based on isDomainSubcommandUsed
 
 	switch toolType {
 	case "httpx", "ffuf", "dirsearch", "amass", "nmap", "dns", "wafw00f", "domain", "mantra", "nuclei":
@@ -190,9 +171,6 @@ func main() {
 			usage()
 		}
 	}
-
-	// If the 'domain' tool is used, no other flags are expected or processed for it by this logic block.
-	// It inherently extracts domains.
 
 	if numThreads < 1 {
 		fmt.Fprintln(os.Stderr, "Error: -t <threads> must be a positive integer.")
@@ -230,8 +208,8 @@ func main() {
 		// Further validation for ffuf -f (e.g., directory readability) can be done in the goroutine.
 	}
 
-	linesChan := make(chan string, numThreads)
-	resultsChan := make(chan ProcessedItem, 1000)
+	linesChan := make(chan string, 1000)
+	resultsChan := make(chan string, 1000)
 	var wg sync.WaitGroup
 	var outputWg sync.WaitGroup
 
@@ -311,22 +289,22 @@ func main() {
 				if line == "" {
 					continue
 				}
-				var processedOutputs []ProcessedItem
+				var processedOutputs []string
 				switch toolType {
 				case "httpx":
-					output, highlights := processHttpxLine(line, filterStatusCodes, filterContentTypes, filterContentLengths, matchStatusCodes, matchContentTypes, matchContentLengths, preserveContent)
-					if output != "" {
-						processedOutputs = append(processedOutputs, ProcessedItem{Output: output, Highlights: highlights})
+					result := processHttpxLine(line, filterStatusCodes, filterContentTypes, filterContentLengths, matchStatusCodes, matchContentTypes, matchContentLengths, preserveContent)
+					if result != "" {
+						processedOutputs = append(processedOutputs, result)
 					}
 				case "ffuf":
-					output, highlights := processFfufLine(line, filterStatusCodes, filterContentTypes, filterContentLengths, matchStatusCodes, matchContentTypes, matchContentLengths, preserveContent)
-					if output != "" {
-						processedOutputs = append(processedOutputs, ProcessedItem{Output: output, Highlights: highlights})
+					result := processFfufLine(line, filterStatusCodes, filterContentTypes, filterContentLengths, matchStatusCodes, matchContentTypes, matchContentLengths, preserveContent)
+					if result != "" {
+						processedOutputs = append(processedOutputs, result)
 					}
 				case "dirsearch":
 					result := processDirsearchLine(line)
 					if result != "" {
-						processedOutputs = append(processedOutputs, ProcessedItem{Output: result})
+						processedOutputs = append(processedOutputs, result)
 					}
 				case "amass":
 					result := processAmassLine(line)
@@ -335,82 +313,72 @@ func main() {
 						for _, hostname := range potentialHostnames {
 							hostname = strings.TrimSpace(hostname)
 							if hostname != "" {
-								processedOutputs = append(processedOutputs, ProcessedItem{Output: hostname})
+								processedOutputs = append(processedOutputs, hostname)
 							}
 						}
 					}
 				case "nmap":
 					var nmapResults []string
 					nmapResults, currentNmapIPContext = processNmapLine(line, currentNmapIPContext)
-					for _, res := range nmapResults {
-						processedOutputs = append(processedOutputs, ProcessedItem{Output: res})
-					}
+					processedOutputs = append(processedOutputs, nmapResults...)
 				case "dns":
 					dnsResults := processDnsLine(line)
-					for _, res := range dnsResults {
-						processedOutputs = append(processedOutputs, ProcessedItem{Output: res})
-					}
+					processedOutputs = append(processedOutputs, dnsResults...)
 				case "wafw00f":
 					wafw00fResults := processWafw00fLine(line)
-					for _, res := range wafw00fResults {
-						processedOutputs = append(processedOutputs, ProcessedItem{Output: res})
-					}
+					processedOutputs = append(processedOutputs, wafw00fResults...)
 				case "domain":
 					domainResult := processDomainToolLine(line)
 					if domainResult != "" {
-						processedOutputs = append(processedOutputs, ProcessedItem{Output: domainResult})
+						processedOutputs = append(processedOutputs, domainResult)
 					}
 				case "mantra":
 					mantraResult := processMantraLine(line)
 					if mantraResult != "" {
-						processedOutputs = append(processedOutputs, ProcessedItem{Output: mantraResult})
+						processedOutputs = append(processedOutputs, mantraResult)
 					}
 				case "nuclei":
 					nucleiResult := processNucleiLine(line)
 					if nucleiResult != "" {
-						processedOutputs = append(processedOutputs, ProcessedItem{Output: nucleiResult})
+						processedOutputs = append(processedOutputs, nucleiResult)
 					}
 				}
-				for _, item := range processedOutputs {
-					if item.Output == "" {
+				for _, outputItem := range processedOutputs {
+					if outputItem == "" {
 						continue
 					}
 
-					// If -pc is used with httpx/ffuf, we pass the ProcessedItem as is
 					if preserveContent && (toolType == "httpx" || toolType == "ffuf") {
-						resultsChan <- item
+						resultsChan <- outputItem
 						continue
 					}
 
-					// If -ip is used, it filters AND extracts the IP:port, overriding other logic.
 					if filterIPHost {
-						ipWithPort := getIPHostWithPort(item.Output, toolType)
+						ipWithPort := getIPHostWithPort(outputItem, toolType)
 						if ipWithPort != "" {
-							resultsChan <- ProcessedItem{Output: ipWithPort}
+							resultsChan <- ipWithPort
 						}
-						continue // Processed with -ip, move to next item.
+						continue
 					}
 
-					// If -d is used, it filters for URLs with domain/subdomain hostnames (not IPs)
 					if extractDomainOnly {
-						domainURL := getDomainHostWithPort(item.Output, toolType)
+						domainURL := getDomainHostWithPort(outputItem, toolType)
 						if domainURL != "" {
-							resultsChan <- ProcessedItem{Output: domainURL}
+							resultsChan <- domainURL
 						}
-						continue // Processed with -d, move to next item.
+						continue
 					}
 
-					// The rest of the logic runs only if -ip and -d are NOT used.
-					host := getHost(item.Output, toolType)
+					host := getHost(outputItem, toolType)
 
 					if toolType == "domain" {
-						resultsChan <- item
+						resultsChan <- outputItem
 					} else if extractHostnameOnly {
 						if host != "" {
-							resultsChan <- ProcessedItem{Output: host}
+							resultsChan <- host
 						}
 					} else {
-						resultsChan <- item
+						resultsChan <- outputItem
 					}
 				}
 			}
@@ -420,18 +388,10 @@ func main() {
 	outputWg.Add(1)
 	go func() {
 		defer outputWg.Done()
-		highlighter := color.New(color.FgYellow, color.Bold).SprintFunc()
-		if noColor {
-			highlighter = func(a ...interface{}) string {
-				return fmt.Sprint(a...)
-			}
-			color.NoColor = true
-		}
-
 		if toolType == "dns" && dnsExtractA {
 			var allIPs []string
 			for result := range resultsChan {
-				allIPs = append(allIPs, result.Output)
+				allIPs = append(allIPs, result)
 			}
 			sort.Strings(allIPs)
 			uniqueIPs := make([]string, 0, len(allIPs))
@@ -447,15 +407,8 @@ func main() {
 				fmt.Println(ip)
 			}
 		} else {
-			for item := range resultsChan {
-				output := item.Output
-				if !noColor && len(item.Highlights) > 0 {
-					for _, h := range item.Highlights {
-						// Important: only replace once to avoid issues if highlight string appears multiple times
-						output = strings.Replace(output, h, highlighter(h), 1)
-					}
-				}
-				fmt.Println(output)
+			for result := range resultsChan {
+				fmt.Println(result)
 			}
 		}
 	}()

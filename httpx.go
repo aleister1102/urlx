@@ -66,39 +66,34 @@ func checkStatusCodeLogic(lineCodesStr string, userList string, isForMatching bo
 
 func processHttpxLine(line string,
 	filterCodesRaw string, filterTypesRaw string, filterLengthsRaw string,
-	matchCodesRaw string, matchTypesRaw string, matchLengthsRaw string, preserveContent bool) (string, []string) {
+	matchCodesRaw string, matchTypesRaw string, matchLengthsRaw string, preserveContent bool) string {
 
 	anyFilterActive := filterCodesRaw != "" || filterTypesRaw != "" || filterLengthsRaw != "" ||
 		matchCodesRaw != "" || matchTypesRaw != "" || matchLengthsRaw != ""
 
 	// If -pc is on and no filters are active, just pass through the line.
 	if preserveContent && !anyFilterActive {
-		return line, nil
+		return line
 	}
 
 	parts := strings.Fields(line)
 	if len(parts) == 0 {
-		return "", nil
+		return ""
 	}
 	originalURL := parts[0]
 
 	if !isValidURL(originalURL) {
-		return "", nil
+		return ""
 	}
 
-	var highlights []string
-
-	// Only perform expensive parsing if any filter/matcher is active.
 	if anyFilterActive {
-
-		var statusCodeStr, statusCodeWithBrackets, contentLengthStr, contentType string
+		var statusCodeStr, contentLengthStr, contentType string
 
 		// Regex to find the first bracketed part that contains status codes like [200] or [301,200]
 		reStatus := regexp.MustCompile(`\[(\d{3}(?:,\s*\d{3})*)\]`)
 		statusMatches := reStatus.FindStringSubmatch(line)
 		if len(statusMatches) > 1 {
-			statusCodeWithBrackets = statusMatches[0] // e.g., "[301,200]"
-			statusCodeStr = statusMatches[1]          // e.g., "301,200"
+			statusCodeStr = statusMatches[1]
 		}
 
 		// Use the more general regex to find other fields like content length and type
@@ -127,38 +122,35 @@ func processHttpxLine(line string,
 		// --- Match Filters (Inclusive, AND logic) ---
 		if matchCodesRaw != "" {
 			if statusCodeStr == "" || !checkStatusCodeLogic(statusCodeStr, matchCodesRaw, true) {
-				return "", nil
+				return ""
 			}
-			highlights = append(highlights, statusCodeWithBrackets)
 		}
 		if matchLengthsRaw != "" {
 			if contentLengthStr == "" || !isMatch(contentLengthStr, matchLengthsRaw) {
-				return "", nil
+				return ""
 			}
-			highlights = append(highlights, contentLengthStr)
 		}
 		if matchTypesRaw != "" {
 			if contentType == "" || !isContentTypeMatch(contentType, matchTypesRaw) {
-				return "", nil
+				return ""
 			}
-			highlights = append(highlights, contentType)
 		}
 
 		// --- Filter-Out Filters (Exclusive) ---
 		if filterCodesRaw != "" && statusCodeStr != "" && checkStatusCodeLogic(statusCodeStr, filterCodesRaw, false) {
-			return "", nil
+			return ""
 		}
 		if filterLengthsRaw != "" && contentLengthStr != "" && isMatch(contentLengthStr, filterLengthsRaw) {
-			return "", nil
+			return ""
 		}
 		if filterTypesRaw != "" && contentType != "" && isContentTypeMatch(contentType, filterTypesRaw) {
-			return "", nil
+			return ""
 		}
 	}
 
-	// If -pc is used, it means the line has passed any active filters. Return it with highlights.
+	// If -pc is used, it means the line has passed any active filters. Return it.
 	if preserveContent {
-		return line, highlights
+		return line
 	}
 
 	urlToProcess := originalURL
@@ -183,7 +175,7 @@ func processHttpxLine(line string,
 	}
 
 	if finalURL != "" {
-		return finalURL, nil
+		return finalURL
 	}
-	return "", nil
+	return ""
 }

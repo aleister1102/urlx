@@ -128,7 +128,6 @@ Filtering & Matching Options ('ffuf', 'httpx' tools):
   -mcl <lengths> Match responses with these content lengths (e.g., 512,1024).
   -mct <types>   Match responses with these content types (e.g., application/json).
   -pc            Preserve original line content on match (instead of extracting URL) (ffuf, httpx only).
-  -nc            Disable color output.
 
 Input:
   [input_file]   Optional. File to read input from. If omitted or '-', reads from stdin.
