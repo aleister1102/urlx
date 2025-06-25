@@ -1,6 +1,6 @@
-# UwU (Extract URL & More) 😺🔗
+# Urlx (Extract URL & More) 😺🔗
 
-`UwU` is a Go-based command-line tool designed to extract and process information from the output of various security assessment and utility tools like `httpx`, `ffuf`, `dirsearch`, `amass`, `nmap`, `dns`, `wafw00f`, `mantra`, and to perform direct domain extraction.
+`Urlx` is a Go-based command-line tool designed to extract and process information from the output of various security assessment and utility tools like `httpx`, `ffuf`, `dirsearch`, `amass`, `nmap`, `dns`, `wafw00f`, `mantra`, and to perform direct domain extraction.
 
 ## ✨ Features
 
@@ -53,51 +53,51 @@
 
 ### From Source
 
-1.  Clone the repository (assuming a future GitHub path like `github.com/yourusername/uwu`):
+1.  Clone the repository (assuming a future GitHub path like `github.com/yourusername/urlx`):
     ```bash
-    git clone https://github.com/yourusername/uwu.git
-    cd uwu
+    git clone https://github.com/yourusername/urlx.git
+    cd urlx
     ```
 2.  Build the executable (ensure all `.go` files are included if you have multiple parser files, e.g., `main.go`, `nmap.go`, `dns.go`, `mantra_parser.go`, etc.):
     ```bash
-    go build -o uwu *.go
+    go build -o urlx *.go
     ```
-    You can then move `uwu` to a directory in your `PATH`, e.g., `/usr/local/bin` or `~/go/bin`.
+    You can then move `urlx` to a directory in your `PATH`, e.g., `/usr/local/bin` or `~/go/bin`.
 
 ### Using `go install` (from a future GitHub repository)
 
 ```bash
-go install github.com/aleister1102/uwu@latest
+go install github.com/aleister1102/urlx@latest
 ```
 
-This will download the source, compile it, and place the `uwu` executable in your `$GOPATH/bin` or `$HOME/go/bin` directory. Make sure this directory is in your system's `PATH`.
+This will download the source, compile it, and place the `urlx` executable in your `$GOPATH/bin` or `$HOME/go/bin` directory. Make sure this directory is in your system's `PATH`.
 
 ## 🚀 Usage
 
 ```
-Usage: ./uwu <tool_name> [options] [input_file]
+Usage: ./urlx <tool_name> [options] [input_file]
 
 Available Tools:
   domain         Extracts domain/IP from a list of URLs.
-                 Example: cat urls.txt | ./uwu domain
+                 Example: cat urls.txt | ./urlx domain
   httpx          Processes httpx output. Expects URLs or lines containing URLs.
-                 Example: httpx -l list.txt -silent | ./uwu httpx -s -d
+                 Example: httpx -l list.txt -silent | ./urlx httpx -s -d
   ffuf           Processes ffuf output. Parses URLs from successful results.
-                 Example: ffuf -w wordlist.txt -u https://example.com/FUZZ | ./uwu ffuf -r
+                 Example: ffuf -w wordlist.txt -u https://example.com/FUZZ | ./urlx ffuf -r
   dirsearch      Processes dirsearch output. Extracts found paths and combines with target.
-                 Example: dirsearch -u https://example.com -e php --simple-report | ./uwu dirsearch
+                 Example: dirsearch -u https://example.com -e php --simple-report | ./urlx dirsearch
   amass          Processes amass intel/enum output. Extracts hostnames.
-                 Example: amass enum -d example.com | ./uwu amass
+                 Example: amass enum -d example.com | ./urlx amass
   nmap           Processes nmap output (standard -oN or -oG). Extracts IP, port, service, version.
-                 Example: nmap -sV example.com | ./uwu nmap -o -p
+                 Example: nmap -sV example.com | ./urlx nmap -o -p
   dns            Processes structured DNS record output (comma-separated). See specific options.
-                 Example: cat dns_records.csv | ./uwu dns -a
+                 Example: cat dns_records.csv | ./urlx dns -a
   wafw00f        Processes wafw00f output. Extracts URL and detected WAF.
-                 Example: wafw00f -i list_of_urls.txt | ./uwu wafw00f -k known
+                 Example: wafw00f -i list_of_urls.txt | ./urlx wafw00f -k known
   mantra         Processes mantra output. Extracts secret and URL from found leaks.
-                 Example: mantra -u https://example.com | ./uwu mantra
+                 Example: mantra -u https://example.com | ./urlx mantra
   nuclei         Processes nuclei output. Extracts URLs from scan results.
-                 Example: nuclei -l targets.txt | ./uwu nuclei
+                 Example: nuclei -l targets.txt | ./urlx nuclei
 
 Common Options (generally not applicable to 'domain' tool directly):
   -r             Extract redirect URLs (if tool output provides redirect info, e.g., httpx, ffuf).
@@ -127,6 +127,8 @@ Filtering & Matching Options ('ffuf', 'httpx' tools):
   -mc <codes>    Match responses with these status codes (e.g., 200,302).
   -mcl <lengths> Match responses with these content lengths (e.g., 512,1024).
   -mct <types>   Match responses with these content types (e.g., application/json).
+  -pc            Preserve original line content on match (instead of extracting URL) (ffuf, httpx only).
+  -nc            Disable color output.
 
 Input:
   [input_file]   Optional. File to read input from. If omitted or '-', reads from stdin.
@@ -136,40 +138,40 @@ Input:
 
 1.  **Process `httpx` output, strip components, extract hostnames, using 10 threads:**
     ```bash
-    cat httpx_output.txt | ./uwu httpx -s -hn -t 10
+    cat httpx_output.txt | ./urlx httpx -s -hn -t 10
     ```
 
 2.  **Process `httpx` output, matching only for 200 status codes:**
     ```bash
-    cat httpx_output.txt | ./uwu httpx -mc 200
+    cat httpx_output.txt | ./urlx httpx -mc 200
     ```
 
 3.  **Process `ffuf` output, matching 200 codes and filtering out `text/html` content type:**
     ```bash
-    cat ffuf_output.csv | ./uwu ffuf -mc 200 -fct text/html
+    cat ffuf_output.csv | ./urlx ffuf -mc 200 -fct text/html
     ```
 
 4.  **Process `nmap` output, filter for open ports, and extract IP:Port pairs:**
     ```bash
     nmap -sV target.com -oN nmap_output.txt
-    cat nmap_output.txt | ./uwu nmap -o -p
+    cat nmap_output.txt | ./urlx nmap -o -p
     ```
 
 5.  **Extract only IPv4/IPv6 addresses from `dns` tool output (comma-separated format):**
     ```bash
     # Assuming dns_output.csv has lines like: query.com,A,N/A,1.2.3.4,...
-    cat dns_output.csv | ./uwu dns -a
+    cat dns_output.csv | ./urlx dns -a
     ```
 
 6.  **Process `wafw00f` output to find sites with a 'known' WAF:**
     ```bash
-    wafw00f -i list_of_urls.txt | ./uwu wafw00f -k known
+    wafw00f -i list_of_urls.txt | ./urlx wafw00f -k known
     # Output: http://example.com - Cloudflare
     ```
 
 7.  **Extract domains directly from a list of URLs using the `domain` tool:**
     ```bash
-    echo "https://example.com/path?query=true" | ./uwu domain
+    echo "https://example.com/path?query=true" | ./urlx domain
     # Output: example.com
     ```
 
@@ -178,32 +180,32 @@ Input:
     # Assuming mantra_output.txt contains lines like:
     # [1;32m[+] [37m https://example.com/api.js  [1;32m[ [37mAPI_KEY_XYZ123 [1;32m] [37m
     # [31m[-] [37m  [37mUnable to make a request for ...
-    cat mantra_output.txt | ./uwu mantra
+    cat mantra_output.txt | ./urlx mantra
     # Expected output: API_KEY_XYZ123 - https://example.com/api.js
     ```
 
 9.  **Process `mantra` output and extract only the hostname from the identified URLs:**
     ```bash
-    cat mantra_output.txt | ./uwu mantra -hn
+    cat mantra_output.txt | ./urlx mantra -hn
     # Expected output: example.com
     ```
 
 10. **Process `httpx` output and extract only domain/subdomain hostnames (excludes IP addresses):**
     ```bash
-    cat httpx_output.txt | ./uwu httpx -d
+    cat httpx_output.txt | ./urlx httpx -d
     # Expected output: domain:port like example.com:8080 but not 192.168.1.1:8080
     # Note: -d flag strips scheme, path, query parameters, and fragments
     ```
 
 11. **Process `nuclei` output to extract URLs from scan results:**
     ```bash
-    nuclei -l targets.txt | ./uwu nuclei
+    nuclei -l targets.txt | ./urlx nuclei
     # Expected output: URLs found by nuclei scans
     ```
 
 12. **Process `nuclei` output and extract only IP addresses and their ports from URLs:**
     ```bash
-    nuclei -l targets.txt | ./uwu nuclei -ip
+    nuclei -l targets.txt | ./urlx nuclei -ip
     # Expected output: A list of unique IP:port pairs (e.g., 91.184.63.175:3000) from the URLs
     ```
 
@@ -212,9 +214,9 @@ Input:
 *   The tool expects specific output formats for each supported tool. Refer to the respective tool's documentation.
 *   When using `ffuf`, ensure you are using a format that outputs full URLs for successful hits.
 *   The `dns` tool expects comma-separated values where the record type is the second field and the target value is the fourth field.
-*   The `wafw00f` parser extracts the first URL and the WAF name from the end of the line (after the last parenthesis).
+*   The `wafw00f` parser extracts the first URL and the WAF name from the end of the line (after the last closing parenthesis).
 *   The `mantra` parser removes ANSI color codes, processes lines starting with `[+] `, and expects the format `URL  [SECRET]` to extract `SECRET - URL`.
-*   Replace `yourusername/uwu` with the actual GitHub repository path when using `go install`.
+*   Replace `yourusername/urlx` with the actual GitHub repository path when using `go install`.
 
 ---
 

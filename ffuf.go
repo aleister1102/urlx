@@ -9,16 +9,16 @@ import (
 // It applies match and filter logic for status code, content type, and content length.
 func processFfufLine(line string,
 	filterCodesRaw string, filterTypesRaw string, filterLengthsRaw string,
-	matchCodesRaw string, matchTypesRaw string, matchLengthsRaw string) string {
+	matchCodesRaw string, matchTypesRaw string, matchLengthsRaw string, preserveContent bool) (string, []string) {
 
 	trimmedLine := strings.TrimSpace(line)
 	if trimmedLine == "" || strings.HasPrefix(trimmedLine, "#") || strings.HasPrefix(trimmedLine, "FUZZ,url,redirectlocation") {
-		return ""
+		return "", nil
 	}
 
 	parts := strings.Split(trimmedLine, ",")
 	if len(parts) < 10 {
-		return ""
+		return "", nil
 	}
 
 	rawURL := parts[1]
@@ -27,26 +27,43 @@ func processFfufLine(line string,
 	contentLengthStr := parts[5]
 	contentType := parts[8]
 
+	var highlights []string
+
 	// --- Match Filters (Inclusive, AND logic) ---
-	if matchCodesRaw != "" && !isMatch(statusCodeStr, matchCodesRaw) {
-		return ""
+	if matchCodesRaw != "" {
+		if !isMatch(statusCodeStr, matchCodesRaw) {
+			return "", nil
+		}
+		highlights = append(highlights, statusCodeStr)
 	}
-	if matchLengthsRaw != "" && !isMatch(contentLengthStr, matchLengthsRaw) {
-		return ""
+	if matchLengthsRaw != "" {
+		if !isMatch(contentLengthStr, matchLengthsRaw) {
+			return "", nil
+		}
+		highlights = append(highlights, contentLengthStr)
 	}
-	if matchTypesRaw != "" && !isContentTypeMatch(contentType, matchTypesRaw) {
-		return ""
+	if matchTypesRaw != "" {
+		if !isContentTypeMatch(contentType, matchTypesRaw) {
+			return "", nil
+		}
+		highlights = append(highlights, contentType)
 	}
 
 	// --- Filter-Out Filters (Exclusive) ---
 	if filterCodesRaw != "" && isMatch(statusCodeStr, filterCodesRaw) {
-		return ""
+		return "", nil
 	}
 	if filterLengthsRaw != "" && isMatch(contentLengthStr, filterLengthsRaw) {
-		return ""
+		return "", nil
 	}
 	if filterTypesRaw != "" && isContentTypeMatch(contentType, filterTypesRaw) {
-		return ""
+		return "", nil
+	}
+
+	// At this point, the line has passed all filters.
+	// If -pc is active, return the original trimmed line with highlights.
+	if preserveContent {
+		return trimmedLine, highlights
 	}
 
 	outputURL := rawURL
@@ -81,12 +98,13 @@ func processFfufLine(line string,
 	if !isValidURL(outputURL) {
 		if isValidURL(rawURL) {
 			if stripComponents {
-				return stripURLComponents(rawURL)
+				return stripURLComponents(rawURL), nil
 			}
-			return rawURL
+			return rawURL, nil
 		}
-		return ""
+		return "", nil
 	}
 
-	return outputURL
+	// For non -pc mode, no highlights are returned
+	return outputURL, nil
 }

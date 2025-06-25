@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/fatih/color"
 )
 
 var (
@@ -36,33 +38,39 @@ var (
 	matchStatusCodes     string
 	matchContentTypes    string
 	matchContentLengths  string
-	// isDomainSubcommandUsed // No longer needed
+	preserveContent      bool
+	noColor              bool
 )
+
+type ProcessedItem struct {
+	Output     string
+	Highlights []string
+}
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage: %s <tool_name> [options] [input_file]\\n\\n", os.Args[0])
 
 	fmt.Fprintln(os.Stderr, "Available Tools:")
 	fmt.Fprintln(os.Stderr, "  domain         Extracts domain/IP from a list of URLs.")
-	fmt.Fprintln(os.Stderr, "                 Example: cat urls.txt | go_parser domain")
+	fmt.Fprintln(os.Stderr, "                 Example: cat urls.txt | urlx domain")
 	fmt.Fprintln(os.Stderr, "  httpx          Processes httpx output. Expects URLs or lines containing URLs.")
-	fmt.Fprintln(os.Stderr, "                 Example: httpx -l list.txt -silent | go_parser httpx -s -d")
+	fmt.Fprintln(os.Stderr, "                 Example: httpx -l list.txt -silent | urlx httpx -s -d")
 	fmt.Fprintln(os.Stderr, "  ffuf           Processes ffuf output. Parses URLs from successful results.")
-	fmt.Fprintln(os.Stderr, "                 Example: ffuf -w wordlist.txt -u https://example.com/FUZZ | go_parser ffuf -r")
+	fmt.Fprintln(os.Stderr, "                 Example: ffuf -w wordlist.txt -u https://example.com/FUZZ | urlx ffuf -r")
 	fmt.Fprintln(os.Stderr, "  dirsearch      Processes dirsearch output. Extracts found paths and combines with target.")
-	fmt.Fprintln(os.Stderr, "                 Example: dirsearch -u https://example.com -e php --simple-report | go_parser dirsearch")
+	fmt.Fprintln(os.Stderr, "                 Example: dirsearch -u https://example.com -e php --simple-report | urlx dirsearch")
 	fmt.Fprintln(os.Stderr, "  amass          Processes amass intel/enum output. Extracts hostnames.")
-	fmt.Fprintln(os.Stderr, "                 Example: amass enum -d example.com | go_parser amass")
+	fmt.Fprintln(os.Stderr, "                 Example: amass enum -d example.com | urlx amass")
 	fmt.Fprintln(os.Stderr, "  nmap           Processes nmap output (standard -oN or -oG). Extracts IP, port, service, version.")
-	fmt.Fprintln(os.Stderr, "                 Example: nmap -sV example.com | go_parser nmap -o -p")
+	fmt.Fprintln(os.Stderr, "                 Example: nmap -sV example.com | urlx nmap -o -p")
 	fmt.Fprintln(os.Stderr, "  dns            Processes structured DNS record output (comma-separated). See specific options.")
-	fmt.Fprintln(os.Stderr, "                 Example: cat dns_records.csv | go_parser dns -ip")
+	fmt.Fprintln(os.Stderr, "                 Example: cat dns_records.csv | urlx dns -ip")
 	fmt.Fprintln(os.Stderr, "  wafw00f        Processes wafw00f output. Extracts URL and detected WAF.")
-	fmt.Fprintln(os.Stderr, "                 Example: wafw00f -i list_of_urls.txt | go_parser wafw00f -k known")
+	fmt.Fprintln(os.Stderr, "                 Example: wafw00f -i list_of_urls.txt | urlx wafw00f -k known")
 	fmt.Fprintln(os.Stderr, "  mantra         Processes mantra output. Extracts secret and URL from found leaks.")
-	fmt.Fprintln(os.Stderr, "                 Example: mantra -u https://example.com | go_parser mantra")
+	fmt.Fprintln(os.Stderr, "                 Example: mantra -u https://example.com | urlx mantra")
 	fmt.Fprintln(os.Stderr, "  nuclei         Processes nuclei output. Extracts URLs from scan results.")
-	fmt.Fprintln(os.Stderr, "                 Example: nuclei -l targets.txt | go_parser nuclei\\n")
+	fmt.Fprintln(os.Stderr, "                 Example: nuclei -l targets.txt | urlx nuclei\\n")
 
 	fmt.Fprintln(os.Stderr, "Common Options (generally not applicable to 'domain' tool directly):")
 	fmt.Fprintln(os.Stderr, "  -r             Extract redirect URLs (if tool output provides redirect info, e.g., httpx, ffuf).")
@@ -91,7 +99,9 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  -fct <types>   Filter out responses with these content types (e.g., text/html).")
 	fmt.Fprintln(os.Stderr, "  -mc <codes>    Match responses with these status codes (e.g., 200,302).")
 	fmt.Fprintln(os.Stderr, "  -mcl <lengths> Match responses with these content lengths (e.g., 512,1024).")
-	fmt.Fprintln(os.Stderr, "  -mct <types>   Match responses with these content types (e.g., application/json).\\n")
+	fmt.Fprintln(os.Stderr, "  -mct <types>   Match responses with these content types (e.g., application/json).")
+	fmt.Fprintln(os.Stderr, "  -pc            Preserve original line content on match (instead of extracting URL) (ffuf, httpx only).")
+	fmt.Fprintln(os.Stderr, "  -nc            Disable color output.\\n")
 
 	fmt.Fprintln(os.Stderr, "Input:")
 	fmt.Fprintln(os.Stderr, "  [input_file]   Optional. File to read input from. If omitted or '-', reads from stdin.")
@@ -150,6 +160,8 @@ func main() {
 	cmdFlags.StringVar(&matchStatusCodes, "mc", "", "Comma-separated status codes to match (ffuf, httpx only)")
 	cmdFlags.StringVar(&matchContentTypes, "mct", "", "Comma-separated content types to match (ffuf, httpx only)")
 	cmdFlags.StringVar(&matchContentLengths, "mcl", "", "Comma-separated content lengths to match (ffuf, httpx only)")
+	cmdFlags.BoolVar(&preserveContent, "pc", false, "Preserve original line content on match (httpx, ffuf only)")
+	cmdFlags.BoolVar(&noColor, "nc", false, "Disable color output")
 
 	err := cmdFlags.Parse(argsForFlags)
 	if err != nil {
@@ -219,7 +231,7 @@ func main() {
 	}
 
 	linesChan := make(chan string, numThreads)
-	resultsChan := make(chan string, numThreads)
+	resultsChan := make(chan ProcessedItem, 1000)
 	var wg sync.WaitGroup
 	var outputWg sync.WaitGroup
 
@@ -299,22 +311,22 @@ func main() {
 				if line == "" {
 					continue
 				}
-				var processedOutputs []string
+				var processedOutputs []ProcessedItem
 				switch toolType {
 				case "httpx":
-					result := processHttpxLine(line, filterStatusCodes, filterContentTypes, filterContentLengths, matchStatusCodes, matchContentTypes, matchContentLengths)
-					if result != "" {
-						processedOutputs = append(processedOutputs, result)
+					output, highlights := processHttpxLine(line, filterStatusCodes, filterContentTypes, filterContentLengths, matchStatusCodes, matchContentTypes, matchContentLengths, preserveContent)
+					if output != "" {
+						processedOutputs = append(processedOutputs, ProcessedItem{Output: output, Highlights: highlights})
 					}
 				case "ffuf":
-					result := processFfufLine(line, filterStatusCodes, filterContentTypes, filterContentLengths, matchStatusCodes, matchContentTypes, matchContentLengths)
-					if result != "" {
-						processedOutputs = append(processedOutputs, result)
+					output, highlights := processFfufLine(line, filterStatusCodes, filterContentTypes, filterContentLengths, matchStatusCodes, matchContentTypes, matchContentLengths, preserveContent)
+					if output != "" {
+						processedOutputs = append(processedOutputs, ProcessedItem{Output: output, Highlights: highlights})
 					}
 				case "dirsearch":
 					result := processDirsearchLine(line)
 					if result != "" {
-						processedOutputs = append(processedOutputs, result)
+						processedOutputs = append(processedOutputs, ProcessedItem{Output: result})
 					}
 				case "amass":
 					result := processAmassLine(line)
@@ -323,70 +335,82 @@ func main() {
 						for _, hostname := range potentialHostnames {
 							hostname = strings.TrimSpace(hostname)
 							if hostname != "" {
-								processedOutputs = append(processedOutputs, hostname)
+								processedOutputs = append(processedOutputs, ProcessedItem{Output: hostname})
 							}
 						}
 					}
 				case "nmap":
 					var nmapResults []string
 					nmapResults, currentNmapIPContext = processNmapLine(line, currentNmapIPContext)
-					processedOutputs = append(processedOutputs, nmapResults...)
+					for _, res := range nmapResults {
+						processedOutputs = append(processedOutputs, ProcessedItem{Output: res})
+					}
 				case "dns":
 					dnsResults := processDnsLine(line)
-					processedOutputs = append(processedOutputs, dnsResults...)
+					for _, res := range dnsResults {
+						processedOutputs = append(processedOutputs, ProcessedItem{Output: res})
+					}
 				case "wafw00f":
 					wafw00fResults := processWafw00fLine(line)
-					processedOutputs = append(processedOutputs, wafw00fResults...)
+					for _, res := range wafw00fResults {
+						processedOutputs = append(processedOutputs, ProcessedItem{Output: res})
+					}
 				case "domain":
 					domainResult := processDomainToolLine(line)
 					if domainResult != "" {
-						processedOutputs = append(processedOutputs, domainResult)
+						processedOutputs = append(processedOutputs, ProcessedItem{Output: domainResult})
 					}
 				case "mantra":
 					mantraResult := processMantraLine(line)
 					if mantraResult != "" {
-						processedOutputs = append(processedOutputs, mantraResult)
+						processedOutputs = append(processedOutputs, ProcessedItem{Output: mantraResult})
 					}
 				case "nuclei":
 					nucleiResult := processNucleiLine(line)
 					if nucleiResult != "" {
-						processedOutputs = append(processedOutputs, nucleiResult)
+						processedOutputs = append(processedOutputs, ProcessedItem{Output: nucleiResult})
 					}
 				}
-				for _, outputItem := range processedOutputs {
-					if outputItem == "" {
+				for _, item := range processedOutputs {
+					if item.Output == "" {
+						continue
+					}
+
+					// If -pc is used with httpx/ffuf, we pass the ProcessedItem as is
+					if preserveContent && (toolType == "httpx" || toolType == "ffuf") {
+						resultsChan <- item
 						continue
 					}
 
 					// If -ip is used, it filters AND extracts the IP:port, overriding other logic.
 					if filterIPHost {
-						ipWithPort := getIPHostWithPort(outputItem, toolType)
+						ipWithPort := getIPHostWithPort(item.Output, toolType)
 						if ipWithPort != "" {
-							resultsChan <- ipWithPort
+							resultsChan <- ProcessedItem{Output: ipWithPort}
 						}
 						continue // Processed with -ip, move to next item.
 					}
 
 					// If -d is used, it filters for URLs with domain/subdomain hostnames (not IPs)
 					if extractDomainOnly {
-						domainURL := getDomainHostWithPort(outputItem, toolType)
+						domainURL := getDomainHostWithPort(item.Output, toolType)
 						if domainURL != "" {
-							resultsChan <- domainURL
+							resultsChan <- ProcessedItem{Output: domainURL}
 						}
 						continue // Processed with -d, move to next item.
 					}
 
 					// The rest of the logic runs only if -ip and -d are NOT used.
-					host := getHost(outputItem, toolType)
+					host := getHost(item.Output, toolType)
 
 					if toolType == "domain" {
-						resultsChan <- outputItem // outputItem is already a domain/IP
+						resultsChan <- item
 					} else if extractHostnameOnly {
 						if host != "" {
-							resultsChan <- host
+							resultsChan <- ProcessedItem{Output: host}
 						}
 					} else {
-						resultsChan <- outputItem
+						resultsChan <- item
 					}
 				}
 			}
@@ -396,10 +420,18 @@ func main() {
 	outputWg.Add(1)
 	go func() {
 		defer outputWg.Done()
+		highlighter := color.New(color.FgYellow, color.Bold).SprintFunc()
+		if noColor {
+			highlighter = func(a ...interface{}) string {
+				return fmt.Sprint(a...)
+			}
+			color.NoColor = true
+		}
+
 		if toolType == "dns" && dnsExtractA {
 			var allIPs []string
 			for result := range resultsChan {
-				allIPs = append(allIPs, result)
+				allIPs = append(allIPs, result.Output)
 			}
 			sort.Strings(allIPs)
 			uniqueIPs := make([]string, 0, len(allIPs))
@@ -415,8 +447,15 @@ func main() {
 				fmt.Println(ip)
 			}
 		} else {
-			for result := range resultsChan {
-				fmt.Println(result)
+			for item := range resultsChan {
+				output := item.Output
+				if !noColor && len(item.Highlights) > 0 {
+					for _, h := range item.Highlights {
+						// Important: only replace once to avoid issues if highlight string appears multiple times
+						output = strings.Replace(output, h, highlighter(h), 1)
+					}
+				}
+				fmt.Println(output)
 			}
 		}
 	}()
