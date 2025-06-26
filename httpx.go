@@ -64,19 +64,30 @@ func checkStatusCodeLogic(lineCodesStr string, userList string, isForMatching bo
 	}
 }
 
+// stripAnsi removes ANSI escape codes from a string.
+func stripAnsi(str string) string {
+	// This regex handles common ANSI color codes, which was the source of the issue.
+	const ansiRegex = "\x1b\\[[0-9;]*m"
+	var re = regexp.MustCompile(ansiRegex)
+	return re.ReplaceAllString(str, "")
+}
+
 func processHttpxLine(line string,
 	filterCodesRaw string, filterTypesRaw string, filterLengthsRaw string,
 	matchCodesRaw string, matchTypesRaw string, matchLengthsRaw string, preserveContent bool) string {
 
+	// First, strip any ANSI color codes from the line to ensure clean parsing.
+	cleanLine := stripAnsi(line)
+
 	anyFilterActive := filterCodesRaw != "" || filterTypesRaw != "" || filterLengthsRaw != "" ||
 		matchCodesRaw != "" || matchTypesRaw != "" || matchLengthsRaw != ""
 
-	// If -pc is on and no filters are active, just pass through the line.
+	// If -pc is on and no filters are active, just pass through the original line.
 	if preserveContent && !anyFilterActive {
 		return line
 	}
 
-	parts := strings.Fields(line)
+	parts := strings.Fields(cleanLine)
 	if len(parts) == 0 {
 		return ""
 	}
@@ -91,14 +102,14 @@ func processHttpxLine(line string,
 
 		// Regex to find the first bracketed part that contains status codes like [200] or [301,200]
 		reStatus := regexp.MustCompile(`\[(\d{3}(?:,\s*\d{3})*)\]`)
-		statusMatches := reStatus.FindStringSubmatch(line)
+		statusMatches := reStatus.FindStringSubmatch(cleanLine)
 		if len(statusMatches) > 1 {
 			statusCodeStr = statusMatches[1]
 		}
 
 		// Use the more general regex to find other fields like content length and type
 		reGeneral := regexp.MustCompile(`\[(.*?)\]`)
-		matches := reGeneral.FindAllStringSubmatch(line, -1)
+		matches := reGeneral.FindAllStringSubmatch(cleanLine, -1)
 
 		// Heuristics to find content length and type
 		var clFound, ctFound bool
@@ -157,7 +168,7 @@ func processHttpxLine(line string,
 
 	if extractRedirect {
 		redirectRegex := regexp.MustCompile(`\[(https?://[^]]*)\]`)
-		redirectMatches := redirectRegex.FindAllStringSubmatch(line, -1)
+		redirectMatches := redirectRegex.FindAllStringSubmatch(cleanLine, -1)
 		if len(redirectMatches) > 0 {
 			lastMatch := redirectMatches[len(redirectMatches)-1]
 			if len(lastMatch) > 1 {
