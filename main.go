@@ -58,7 +58,11 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  mantra         Processes mantra output. Extracts secret and URL from found leaks.")
 	fmt.Fprintln(os.Stderr, "                 Example: mantra -u https://example.com | urlx mantra")
 	fmt.Fprintln(os.Stderr, "  nuclei         Processes nuclei output. Extracts URLs from scan results.")
-	fmt.Fprintln(os.Stderr, "                 Example: nuclei -l targets.txt | urlx nuclei\\n")
+	fmt.Fprintln(os.Stderr, "                 Example: nuclei -l targets.txt | urlx nuclei")
+	fmt.Fprintln(os.Stderr, "  gospider       Processes gospider output. Extracts URLs from scan results.")
+	fmt.Fprintln(os.Stderr, "                 Example: gospider -s \"https://example.com\" | urlx gospider")
+	fmt.Fprintln(os.Stderr, "  completion     Generates shell completion scripts for bash or zsh.")
+	fmt.Fprintln(os.Stderr, "                 Example: urlx completion bash > /etc/bash_completion.d/urlx\\n")
 
 	fmt.Fprintln(os.Stderr, "Common Options (generally not applicable to 'domain' tool directly):")
 	fmt.Fprintln(os.Stderr, "  -r             Extract redirect URLs (if tool output provides redirect info, e.g., httpx, ffuf).")
@@ -118,6 +122,15 @@ func main() {
 	toolType := os.Args[1]
 	argsForFlags := os.Args[2:]
 
+	if toolType == "completion" {
+		if len(os.Args) != 3 {
+			fmt.Fprintln(os.Stderr, "Usage: ./urlx completion [bash|zsh]")
+			os.Exit(1)
+		}
+		handleCompletion(os.Args[2])
+		return
+	}
+
 	cmdFlags := flag.NewFlagSet(toolType, flag.ExitOnError)
 	cmdFlags.Usage = usage
 
@@ -153,10 +166,10 @@ func main() {
 	}
 
 	switch toolType {
-	case "httpx", "ffuf", "dirsearch", "amass", "nmap", "dns", "wafw00f", "domain", "mantra", "nuclei":
+	case "httpx", "ffuf", "dirsearch", "amass", "nmap", "dns", "wafw00f", "domain", "mantra", "nuclei", "gospider":
 		// Known tool
 	default:
-		fmt.Fprintf(os.Stderr, "Error: Unsupported tool type '%s'. Supported tools are: httpx, ffuf, dirsearch, amass, nmap, dns, wafw00f, domain, mantra, nuclei.\n", toolType)
+		fmt.Fprintf(os.Stderr, "Error: Unsupported tool type '%s'. Supported tools are: httpx, ffuf, dirsearch, amass, nmap, dns, wafw00f, domain, mantra, nuclei, gospider, completion.\n", toolType)
 		usage()
 	}
 
@@ -341,6 +354,11 @@ func main() {
 					nucleiResult := processNucleiLine(line)
 					if nucleiResult != "" {
 						processedOutputs = append(processedOutputs, nucleiResult)
+					}
+				case "gospider":
+					gospiderResult := processGospiderLine(line)
+					if gospiderResult != "" {
+						processedOutputs = append(processedOutputs, gospiderResult)
 					}
 				}
 				for _, outputItem := range processedOutputs {
@@ -603,3 +621,5 @@ func getIPHostWithPort(outputItem string, toolType string) string {
 // processDomainToolLine is in domain_parser.go
 // processMantraLine is in mantra_parser.go
 // processNucleiLine is in nuclei.go
+// processGospiderLine is in gospider.go
+// handleCompletion is in completion.go

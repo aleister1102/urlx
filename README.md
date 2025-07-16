@@ -1,6 +1,6 @@
 # Urlx (Extract URL & More) 😺🔗
 
-`Urlx` is a Go-based command-line tool designed to extract and process information from the output of various security assessment and utility tools like `httpx`, `ffuf`, `dirsearch`, `amass`, `nmap`, `dns`, `wafw00f`, `mantra`, and to perform direct domain extraction.
+`Urlx` is a Go-based command-line tool designed to extract and process information from the output of various security assessment and utility tools like `httpx`, `ffuf`, `dirsearch`, `amass`, `nmap`, `dns`, `wafw00f`, `mantra`, `gospider`, and to perform direct domain extraction.
 
 ## ✨ Features
 
@@ -14,6 +14,7 @@
     *   `wafw00f` (URL and detected WAF)
     *   `mantra` (extracts secrets and associated URLs from lines indicating found leaks)
     *   `nuclei` (extracts URLs from scan results)
+    *   `gospider` (extracts URLs from scan results)
 *   `domain` tool: Extracts domain/IP directly from a list of input URLs.
 *   Common processing options:
     *   Extract redirect URLs (`-r` for applicable tools like `httpx`, `ffuf`).
@@ -24,7 +25,7 @@
 *   `httpx` & `ffuf` specific filter options:
     *   Filter by status codes (`-fc`).
     *   Filter by content length (`-fcl`).
-    *   Filter by content type (`-fct`).
+    *   Filter by content type (`-fct`).clear
     *   Match by status codes (`-mc`).
     *   Match by content length (`-mcl`).
     *   Match by content type (`-mct`).
@@ -44,6 +45,7 @@
     *   Outputs in the format: `some_api_key - http://example.com/script.js`.
 *   Concurrent processing of input lines (`-t` flag for threads).
 *   Reads from a file or standard input.
+*   Generates shell completion scripts for `bash` and `zsh`.
 
 ## 🛠️ Installation
 
@@ -98,6 +100,10 @@ Available Tools:
                  Example: mantra -u https://example.com | ./urlx mantra
   nuclei         Processes nuclei output. Extracts URLs from scan results.
                  Example: nuclei -l targets.txt | ./urlx nuclei
+  gospider       Processes gospider output. Extracts URLs from scan results.
+                 Example: gospider -s "https://example.com" | ./urlx gospider
+  completion     Generates shell completion scripts for bash or zsh.
+                 Example: ./urlx completion bash > /etc/bash_completion.d/urlx
 
 Common Options (generally not applicable to 'domain' tool directly):
   -r             Extract redirect URLs (if tool output provides redirect info, e.g., httpx, ffuf).
@@ -208,6 +214,20 @@ Input:
     # Expected output: A list of unique IP:port pairs (e.g., 91.184.63.175:3000) from the URLs
     ```
 
+13. **Process `gospider` output and strip URL components:**
+    ```bash
+    gospider -s "https://example.com" -o output_folder | cat output_folder/example.com | ./urlx gospider -s
+    # Expected output: A list of base URLs (e.g., https://example.com)
+    ```
+
+14. **Generate and install bash completion script:**
+    ```bash
+    ./urlx completion bash | sudo tee /etc/bash_completion.d/urlx
+    # For zsh, you might add it to a file in your fpath:
+    # ./urlx completion zsh > ~/.oh-my-zsh/completions/_urlx
+    # You may need to restart your shell for changes to take effect.
+    ```
+
 ## 📝 Notes
 
 *   The tool expects specific output formats for each supported tool. Refer to the respective tool's documentation.
@@ -228,6 +248,6 @@ Happy URL extracting! 🎉
   - [x] nmap (filter open ports, extract IPv6, IP:port pairs, etc)
   - [x] ffuf (process folder, filter by code, content-type, length)
   - [x] httpx (filter by code, content-type, length)
-
-## 🐛 Bugs
-- Option `-mx` of `dns` subcommand is not working.
+ 
+ ## 🐛 Bugs
+ - Option `-mx` of `dns` subcommand is not working.
