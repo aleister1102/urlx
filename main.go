@@ -61,6 +61,8 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "                 Example: nuclei -l targets.txt | urlx nuclei")
 	fmt.Fprintln(os.Stderr, "  gospider       Processes gospider output. Extracts URLs from scan results.")
 	fmt.Fprintln(os.Stderr, "                 Example: gospider -s \"https://example.com\" | urlx gospider")
+	fmt.Fprintln(os.Stderr, "  urls           Processes a list of URLs from file. Validates and filters URLs.")
+	fmt.Fprintln(os.Stderr, "                 Example: cat urls.txt | urlx urls -s")
 	fmt.Fprintln(os.Stderr, "  completion     Generates shell completion scripts for bash or zsh.")
 	fmt.Fprintln(os.Stderr, "                 Example: urlx completion bash > /etc/bash_completion.d/urlx\\n")
 
@@ -166,10 +168,10 @@ func main() {
 	}
 
 	switch toolType {
-	case "httpx", "ffuf", "dirsearch", "amass", "nmap", "dns", "wafw00f", "domain", "mantra", "nuclei", "gospider":
+	case "httpx", "ffuf", "dirsearch", "amass", "nmap", "dns", "wafw00f", "domain", "mantra", "nuclei", "gospider", "urls":
 		// Known tool
 	default:
-		fmt.Fprintf(os.Stderr, "Error: Unsupported tool type '%s'. Supported tools are: httpx, ffuf, dirsearch, amass, nmap, dns, wafw00f, domain, mantra, nuclei, gospider, completion.\n", toolType)
+		fmt.Fprintf(os.Stderr, "Error: Unsupported tool type '%s'. Supported tools are: httpx, ffuf, dirsearch, amass, nmap, dns, wafw00f, domain, mantra, nuclei, gospider, urls, completion.\n", toolType)
 		usage()
 	}
 
@@ -359,6 +361,11 @@ func main() {
 					gospiderResult := processGospiderLine(line)
 					if gospiderResult != "" {
 						processedOutputs = append(processedOutputs, gospiderResult)
+					}
+				case "urls":
+					urlsResult := processUrlsLine(line)
+					if urlsResult != "" {
+						processedOutputs = append(processedOutputs, urlsResult)
 					}
 				}
 				for _, outputItem := range processedOutputs {
@@ -622,4 +629,5 @@ func getIPHostWithPort(outputItem string, toolType string) string {
 // processMantraLine is in mantra_parser.go
 // processNucleiLine is in nuclei.go
 // processGospiderLine is in gospider.go
+// processUrlsLine is in urls.go
 // handleCompletion is in completion.go
