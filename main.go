@@ -15,7 +15,6 @@ import (
 var (
 	extractRedirect      bool
 	stripComponents      bool
-	extractHostnameOnly  bool
 	extractDomainOnly    bool
 	filterIPHost         bool
 	numThreads           int
@@ -36,55 +35,40 @@ var (
 )
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "Usage: %s <tool_name> [options] [input_file]\\n\\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "Usage: %s <tool_name> [options] [input_file]\n", os.Args[0])
 
 	fmt.Fprintln(os.Stderr, "Available Tools:")
-	fmt.Fprintln(os.Stderr, "  domain         Extracts domain/IP from a list of URLs.")
-	fmt.Fprintln(os.Stderr, "                 Example: cat urls.txt | urlx domain")
-	fmt.Fprintln(os.Stderr, "  httpx          Processes httpx output. Expects URLs or lines containing URLs.")
-	fmt.Fprintln(os.Stderr, "                 Example: httpx -l list.txt -silent | urlx httpx -s -d")
-	fmt.Fprintln(os.Stderr, "  ffuf           Processes ffuf output. Parses URLs from successful results.")
-	fmt.Fprintln(os.Stderr, "                 Example: ffuf -w wordlist.txt -u https://example.com/FUZZ | urlx ffuf -r")
-	fmt.Fprintln(os.Stderr, "  dirsearch      Processes dirsearch output. Extracts found paths and combines with target.")
-	fmt.Fprintln(os.Stderr, "                 Example: dirsearch -u https://example.com -e php --simple-report | urlx dirsearch")
 	fmt.Fprintln(os.Stderr, "  amass          Processes amass intel/enum output. Extracts hostnames.")
-	fmt.Fprintln(os.Stderr, "                 Example: amass enum -d example.com | urlx amass")
-	fmt.Fprintln(os.Stderr, "  nmap           Processes nmap output (standard -oN or -oG). Extracts IP, port, service, version.")
-	fmt.Fprintln(os.Stderr, "                 Example: nmap -sV example.com | urlx nmap -o -p")
-	fmt.Fprintln(os.Stderr, "  dns            Processes structured DNS record output (comma-separated). See specific options.")
-	fmt.Fprintln(os.Stderr, "                 Example: cat dns_records.csv | urlx dns -ip")
-	fmt.Fprintln(os.Stderr, "  wafw00f        Processes wafw00f output. Extracts URL and detected WAF.")
-	fmt.Fprintln(os.Stderr, "                 Example: wafw00f -i list_of_urls.txt | urlx wafw00f -k known")
-	fmt.Fprintln(os.Stderr, "  mantra         Processes mantra output. Extracts secret and URL from found leaks.")
-	fmt.Fprintln(os.Stderr, "                 Example: mantra -u https://example.com | urlx mantra")
-	fmt.Fprintln(os.Stderr, "  nuclei         Processes nuclei output. Extracts URLs from scan results.")
-	fmt.Fprintln(os.Stderr, "                 Example: nuclei -l targets.txt | urlx nuclei")
-	fmt.Fprintln(os.Stderr, "  gospider       Processes gospider output. Extracts URLs from scan results.")
-	fmt.Fprintln(os.Stderr, "                 Example: gospider -s \"https://example.com\" | urlx gospider")
-	fmt.Fprintln(os.Stderr, "  urls           Processes a list of URLs from file. Validates and filters URLs.")
-	fmt.Fprintln(os.Stderr, "                 Example: cat urls.txt | urlx urls -s")
 	fmt.Fprintln(os.Stderr, "  completion     Generates shell completion scripts for bash or zsh.")
-	fmt.Fprintln(os.Stderr, "                 Example: urlx completion bash > /etc/bash_completion.d/urlx\\n")
-
+	fmt.Fprintln(os.Stderr, "  dirsearch      Processes dirsearch output. Extracts found paths and combines with target.")
+	fmt.Fprintln(os.Stderr, "  dns            Processes structured DNS record output (comma-separated). See specific options.")
+	fmt.Fprintln(os.Stderr, "  domain         Extracts domain/IP from a list of URLs.")
+	fmt.Fprintln(os.Stderr, "  ffuf           Processes ffuf output. Parses URLs from successful results.")
+	fmt.Fprintln(os.Stderr, "  gospider       Processes gospider output. Extracts URLs from scan results.")
+	fmt.Fprintln(os.Stderr, "  httpx          Processes httpx output. Expects URLs or lines containing URLs.")
+	fmt.Fprintln(os.Stderr, "  mantra         Processes mantra output. Extracts secret and URL from found leaks.")
+	fmt.Fprintln(os.Stderr, "  nmap           Processes nmap output (standard -oN or -oG). Extracts IP, port, service, version.")
+	fmt.Fprintln(os.Stderr, "  nuclei         Processes nuclei output. Extracts URLs from scan results.")
+	fmt.Fprintln(os.Stderr, "  urls           Processes a list of URLs from file. Validates and filters URLs.")
+	fmt.Fprintln(os.Stderr, "  wafw00f        Processes wafw00f output. Extracts URL and detected WAF.")
 	fmt.Fprintln(os.Stderr, "Common Options (generally not applicable to 'domain' tool directly):")
 	fmt.Fprintln(os.Stderr, "  -r             Extract redirect URLs (if tool output provides redirect info, e.g., httpx, ffuf).")
 	fmt.Fprintln(os.Stderr, "  -s             Strip URL components (path, query parameters and fragments) before further processing or output.")
 	fmt.Fprintln(os.Stderr, "  -d             Extract domain/subdomain hostnames with port (excludes IPs, strips scheme/path/query/fragment).")
-	fmt.Fprintln(os.Stderr, "  -hn            Extract only hostname/IP from the final processed output. (Note: 'domain' tool inherently does this).")
 	fmt.Fprintln(os.Stderr, "  -ip            Filters for URLs with an IP host and extracts the IP address and port (e.g., 1.2.3.4:443).")
-	fmt.Fprintln(os.Stderr, "  -t <threads>   Number of concurrent processing threads (default: 1).\\n")
+	fmt.Fprintln(os.Stderr, "  -t <threads>   Number of concurrent processing threads (default: 1).")
 
 	fmt.Fprintln(os.Stderr, "Nmap Specific Options ('nmap' tool only):")
 	fmt.Fprintln(os.Stderr, "  -p             Export IP and port pairs (e.g., 192.168.1.1:80). Overrides default nmap format.")
-	fmt.Fprintln(os.Stderr, "  -o             Filter for open ports only. Applied before -p if both are used.\\n")
+	fmt.Fprintln(os.Stderr, "  -o             Filter for open ports only. Applied before -p if both are used.")
 
 	fmt.Fprintln(os.Stderr, "Dns Specific Options ('dns' tool only - must choose one):")
 	fmt.Fprintln(os.Stderr, "  -a             Extract IP addresses (A/AAAA records), sorted and unique.")
 	fmt.Fprintln(os.Stderr, "  -cname         Extract CNAME domain records (the canonical name).")
-	fmt.Fprintln(os.Stderr, "  -mx            Extract MX domain records (the mail exchange hostname).\\n")
+	fmt.Fprintln(os.Stderr, "  -mx            Extract MX domain records (the mail exchange hostname).")
 
 	fmt.Fprintln(os.Stderr, "Wafw00f Specific Options ('wafw00f' tool only):")
-	fmt.Fprintln(os.Stderr, "  -k <kind>      WAF kind to extract: 'none', 'generic', or 'known' (default: 'none').\\n")
+	fmt.Fprintln(os.Stderr, "  -k <kind>      WAF kind to extract: 'none', 'generic', or 'known' (default: 'none').")
 
 	fmt.Fprintln(os.Stderr, "Filtering & Matching Options ('ffuf', 'httpx'):")
 	fmt.Fprintln(os.Stderr, "  -f             Process all files in the current directory as ffuf input (ffuf only).")
@@ -94,7 +78,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  -mc <codes>    Match responses with these status codes (e.g., 200,302).")
 	fmt.Fprintln(os.Stderr, "  -mcl <lengths> Match responses with these content lengths (e.g., 512,1024).")
 	fmt.Fprintln(os.Stderr, "  -mct <types>   Match responses with these content types (e.g., application/json).")
-	fmt.Fprintln(os.Stderr, "  -pc            Preserve original line content on match (instead of extracting URL) (ffuf, httpx only).\\n")
+	fmt.Fprintln(os.Stderr, "  -pc            Preserve original line content on match (instead of extracting URL) (ffuf, httpx only).")
 
 	fmt.Fprintln(os.Stderr, "Input:")
 	fmt.Fprintln(os.Stderr, "  [input_file]   Optional. File to read input from. If omitted or '-', reads from stdin.")
@@ -138,8 +122,7 @@ func main() {
 
 	cmdFlags.BoolVar(&extractRedirect, "r", false, "Extract redirect URLs")
 	cmdFlags.BoolVar(&stripComponents, "s", false, "Strip URL components")
-	cmdFlags.BoolVar(&extractDomainOnly, "d", false, "Extract URLs with domain/subdomain hostname (not IP)")
-	cmdFlags.BoolVar(&extractHostnameOnly, "hn", false, "Extract only domain/IP from URLs/output (for relevant tools)")
+	cmdFlags.BoolVar(&extractDomainOnly, "d", false, "Extract domain/subdomain hostnames with port (excludes IPs)")
 	cmdFlags.BoolVar(&filterIPHost, "ip", false, "Filter for URLs with an IP host and extract IP:port.")
 	cmdFlags.IntVar(&numThreads, "t", 1, "Number of concurrent threads")
 
@@ -394,14 +377,8 @@ func main() {
 						continue
 					}
 
-					host := getHost(outputItem, toolType)
-
 					if toolType == "domain" {
 						resultsChan <- outputItem
-					} else if extractHostnameOnly {
-						if host != "" {
-							resultsChan <- host
-						}
 					} else {
 						resultsChan <- outputItem
 					}

@@ -1,0 +1,60 @@
+# GoReleaser cấu hình phát hành binary "urlx"
+# Tài liệu: https://goreleaser.com
+project_name: urlx
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: urlx
+    main: .
+    binary: urlx
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # Nếu cần thêm: - 386, arm, ...
+    ldflags:
+      - -s -w -X main.Version={{.Version}} -X main.Commit={{.Commit}} -X main.Date={{.Date}}
+
+archives:
+  - id: archive
+    builds:
+      - urlx
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README*
+      # Thêm bất kỳ file đi kèm nào khác nếu cần
+
+checksum:
+  name_template: "checksums_{{ .Version }}.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs?:'
+      - '^chore:'
+      - '^ci:'
+      - '^test:'
+
+release:
+  draft: false
+  prerelease: auto
+  # đặt prerelease: true nếu muốn tag kiểu v1.0.0-rc1 hành xử khác
+
+# (Tùy chọn) Nếu muốn ký (cosign, minisign) hoặc tạo SBOM:
+# sboms:
+#   - id: sbom
+#     artifacts: archive
+
+# (Tùy chọn) Homebrew tap / scoop / etc có thể thêm sau.
