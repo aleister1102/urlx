@@ -11,25 +11,37 @@ func processAmassLine(line string) string {
 		return ""
 	}
 
-	// Regex for MX record lines: e.g., dev.remitly.com (FQDN) --> mx_record --> alt3.aspmx.l.google.com (FQDN)
-	mxRegex := regexp.MustCompile(`^(.*?) \(FQDN\) --> mx_record --> (.*?) \(FQDN\)$`)
-	matches := mxRegex.FindStringSubmatch(line)
-
-	if len(matches) == 3 {
-		sourceFQDN := strings.TrimSpace(matches[1])
-		targetFQDN := strings.TrimSpace(matches[2])
-		if sourceFQDN != "" && targetFQDN != "" {
-			return sourceFQDN + "\n" + targetFQDN // Return both, separated by newline
-		} else if sourceFQDN != "" {
-			return sourceFQDN
-		} else if targetFQDN != "" {
-			return targetFQDN
-		}
-		return "" // Should not happen if regex matched and parts were non-empty
+	// Ignore lines about ASN/Netblock entirely
+	if strings.Contains(line, "(ASN)") || strings.Contains(line, "(Netblock)") || strings.Contains(line, "(RIROrganization)") {
+		return ""
 	}
 
-	// For simple FQDN lines or anything else that doesn't match the MX record pattern
-	// We assume it's a valid hostname/FQDN if it's not an MX record line.
-	// A more robust validation could be added here if needed, e.g. using isValidURL or a similar check.
-	return line
+	// General amass edge pattern: "<src> (FQDN) --> <record_type> --> <dst> (<Kind>)"
+	// Kind is usually FQDN or IPAddress
+	edgeRegex := regexp.MustCompile(`^\s*(.*?)\s*\(FQDN\)\s*-->\s*[a-z_]+\s*-->\s*(.*?)\s*\((FQDN|IPAddress)\)\s*$`)
+	if m := edgeRegex.FindStringSubmatch(line); len(m) == 4 {
+		src := strings.TrimSpace(m[1])
+		dst := strings.TrimSpace(m[2])
+		dstKind := m[3]
+
+		// Always emit the source FQDN
+		// Emit destination only if it is also an FQDN (skip IPs)
+		if dstKind == "FQDN" && dst != "" {
+			if src != "" {
+				return src + "\n" + dst
+			}
+			return dst
+		}
+		return src
+	}
+
+	// Simple node line pattern: "<fqdn> (FQDN)"
+	nodeRegex := regexp.MustCompile(`^\s*(.*?)\s*\(FQDN\)\s*$`)
+	if m := nodeRegex.FindStringSubmatch(line); len(m) == 2 {
+		fqdn := strings.TrimSpace(m[1])
+		return fqdn
+	}
+
+	// Anything else is not a hostname we care about
+	return ""
 }
