@@ -13,7 +13,7 @@ _urlx_complete()
 
     # Complete subcommands
     if [ "$prev" == "urlx" ]; then
-        COMPREPLY=( $(compgen -W "domain httpx ffuf dirsearch amass nmap dns wafw00f mantra nuclei gospider completion" -- "$cur") )
+        COMPREPLY=( $(compgen -W "amass completion dirsearch dns domain ffuf gospider httpx mantra massdns nmap nuclei urls wafw00f" -- "$cur") )
         return
     fi
 
@@ -27,7 +27,7 @@ _urlx_complete()
     local tool
     for word in "${words[@]}"; do
         case "$word" in
-            domain|httpx|ffuf|dirsearch|amass|nmap|dns|wafw00f|mantra|nuclei|gospider)
+            amass|completion|dirsearch|dns|domain|ffuf|gospider|httpx|mantra|massdns|nmap|nuclei|urls|wafw00f)
                 tool="$word"
                 break
                 ;;
@@ -78,18 +78,20 @@ _urlx() {
     local -a common_flags tool_flags subcommands
     
     subcommands=(
-        'domain:Extracts domain/IP from a list of URLs'
-        'httpx:Processes httpx output'
-        'ffuf:Processes ffuf output'
-        'dirsearch:Processes dirsearch output'
         'amass:Processes amass intel/enum output'
-        'nmap:Processes nmap output'
-        'dns:Processes structured DNS record output'
-        'wafw00f:Processes wafw00f output'
-        'mantra:Processes mantra output'
-        'nuclei:Processes nuclei output'
-        'gospider:Processes gospider output'
         'completion:Generate completion script for bash/zsh'
+        'dirsearch:Processes dirsearch output'
+        'dns:Processes structured DNS record output'
+        'domain:Extracts domain/IP from a list of URLs'
+        'ffuf:Processes ffuf output'
+        'gospider:Processes gospider output'
+        'httpx:Processes httpx output'
+        'mantra:Processes mantra output'
+        'massdns:Processes massdns output'
+        'nmap:Processes nmap output'
+        'nuclei:Processes nuclei output'
+        'urls:Processes a list of URLs from file'
+        'wafw00f:Processes wafw00f output'
     )
 
     common_flags=(
@@ -107,7 +109,7 @@ _urlx() {
     local tool_cmd
     for word in ${words[@]}; do
         case $word in
-            (domain|httpx|ffuf|dirsearch|amass|nmap|dns|wafw00f|mantra|nuclei|gospider)
+            (amass|completion|dirsearch|dns|domain|ffuf|gospider|httpx|mantra|massdns|nmap|nuclei|urls|wafw00f)
                 tool_cmd=$word
                 break
             ;;

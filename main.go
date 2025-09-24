@@ -47,6 +47,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  gospider       Processes gospider output. Extracts URLs from scan results.")
 	fmt.Fprintln(os.Stderr, "  httpx          Processes httpx output. Expects URLs or lines containing URLs.")
 	fmt.Fprintln(os.Stderr, "  mantra         Processes mantra output. Extracts secret and URL from found leaks.")
+	fmt.Fprintln(os.Stderr, "  massdns        Processes massdns output. Extracts subdomains with valid public A records.")
 	fmt.Fprintln(os.Stderr, "  nmap           Processes nmap output (standard -oN or -oG). Extracts IP, port, service, version.")
 	fmt.Fprintln(os.Stderr, "  nuclei         Processes nuclei output. Extracts URLs from scan results.")
 	fmt.Fprintln(os.Stderr, "  urls           Processes a list of URLs from file. Validates and filters URLs.")
@@ -151,10 +152,10 @@ func main() {
 	}
 
 	switch toolType {
-	case "httpx", "ffuf", "dirsearch", "amass", "nmap", "dns", "wafw00f", "domain", "mantra", "nuclei", "gospider", "urls":
+	case "httpx", "ffuf", "dirsearch", "amass", "nmap", "dns", "wafw00f", "domain", "mantra", "nuclei", "gospider", "urls", "massdns":
 		// Known tool
 	default:
-		fmt.Fprintf(os.Stderr, "Error: Unsupported tool type '%s'. Supported tools are: httpx, ffuf, dirsearch, amass, nmap, dns, wafw00f, domain, mantra, nuclei, gospider, urls, completion.\n", toolType)
+		fmt.Fprintf(os.Stderr, "Error: Unsupported tool type '%s'. Supported tools are: httpx, ffuf, dirsearch, amass, nmap, dns, wafw00f, domain, mantra, nuclei, gospider, urls, massdns, completion.\n", toolType)
 		usage()
 	}
 
@@ -350,6 +351,14 @@ func main() {
 					if urlsResult != "" {
 						processedOutputs = append(processedOutputs, urlsResult)
 					}
+				case "massdns":
+					var massdnsResults []string
+					if filterIPHost {
+						massdnsResults = processMassdnsLineForIP(line)
+					} else {
+						massdnsResults = processMassdnsLine(line)
+					}
+					processedOutputs = append(processedOutputs, massdnsResults...)
 				}
 				for _, outputItem := range processedOutputs {
 					if outputItem == "" {
@@ -607,4 +616,6 @@ func getIPHostWithPort(outputItem string, toolType string) string {
 // processNucleiLine is in nuclei.go
 // processGospiderLine is in gospider.go
 // processUrlsLine is in urls.go
+// processMassdnsLine is in massdns.go
+// processMassdnsLineForIP is in massdns.go
 // handleCompletion is in completion.go

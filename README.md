@@ -34,6 +34,7 @@ urlx <tool> [options] [input_file]
 | `gospider` | Process gospider output |
 | `httpx` | Process httpx output |
 | `mantra` | Process mantra output |
+| `massdns` | Process massdns output |
 | `nmap` | Process nmap output |
 | `nuclei` | Process nuclei output |
 | `urls` | Process URL lists |
@@ -89,6 +90,12 @@ nmap -sV target.com | urlx nmap -o -p
 
 # Process DNS records
 cat dns.csv | urlx dns -a
+
+# Process massdns output to extract valid subdomains
+massdns -r resolvers.txt -t A -o S domains.txt | urlx massdns
+
+# Extract IPs from massdns output
+massdns -r resolvers.txt -t A -o S domains.txt | urlx massdns -ip
 
 # Generate completion
 urlx completion bash > /etc/bash_completion.d/urlx
