@@ -26,19 +26,14 @@ urlx <tool> [options] [input_file]
 | Tool | Description |
 |------|-------------|
 | `amass` | Process amass output |
-| `completion` | Generate shell completion |
 | `dirsearch` | Process dirsearch output |
-| `dns` | Process DNS records |
-| `domain` | Extract domains/IPs from URLs |
+| `dnsx` | Process dnsx output (DNS records) |
 | `ffuf` | Process ffuf output |
 | `gospider` | Process gospider output |
 | `httpx` | Process httpx output |
-| `mantra` | Process mantra output |
-| `massdns` | Process massdns output |
 | `nmap` | Process nmap output |
 | `nuclei` | Process nuclei output |
 | `urls` | Process URL lists |
-| `wafw00f` | Process wafw00f output |
 
 ### Common Options
 
@@ -56,58 +51,67 @@ urlx <tool> [options] [input_file]
 - `-p` Export IP:port pairs
 - `-o` Filter open ports only
 
-**dns:**
-- `-a` Extract A/AAAA records
-- `-cname` Extract CNAME records  
-- `-mx` Extract MX records
+**dnsx:**
+- `-a` Extract A records (IPv4 addresses)
+- `-aaaa` Extract AAAA records (IPv6 addresses)
+- `-cname` Extract CNAME records (canonical names)
+- `-mx` Extract MX records (mail exchange hostnames)
+- `-txt` Extract TXT records
+- `-ns` Extract NS and SOA records (nameservers)
 
-**wafw00f:**
-- `-k <kind>` WAF filter: none/generic/known (default: none)
-
-**ffuf/httpx:**
+**ffuf/httpx/dirsearch:**
 - `-fc <codes>` Filter out status codes
 - `-fcl <lengths>` Filter out content lengths
-- `-fct <types>` Filter out content types
+- `-fct <types>` Filter out content types (ffuf, httpx only)
 - `-mc <codes>` Match status codes
 - `-mcl <lengths>` Match content lengths
-- `-mct <types>` Match content types
+- `-mct <types>` Match content types (ffuf, httpx only)
 - `-pc` Preserve original content
 
 ## Examples
 
 ```bash
-# Extract domains from URLs
-echo "https://example.com/path" | urlx domain
-
 # Process httpx with filters
 httpx -l targets.txt | urlx httpx -mc 200 -s
 
 # Process ffuf output
 ffuf -w wordlist.txt -u https://example.com/FUZZ | urlx ffuf -r
 
+# Process dirsearch output with filters
+dirsearch -u https://example.com -o output.txt
+cat output.txt | urlx dirsearch -mc 200,301
+
+# Extract redirect URLs from dirsearch
+cat dirsearch.txt | urlx dirsearch -r -mc 301,302
+
+# Filter out specific status codes
+cat dirsearch.txt | urlx dirsearch -fc 404,403
+
 # Extract IP:port from nmap
 nmap -sV target.com | urlx nmap -o -p
 
-# Process DNS records
-cat dns.csv | urlx dns -a
+# Process dnsx output to extract A records
+dnsx -l subdomains.txt -a -resp | urlx dnsx -a
 
-# Process massdns output to extract valid subdomains
-massdns -r resolvers.txt -t A -o S domains.txt | urlx massdns
+# Extract AAAA records (IPv6)
+dnsx -l subdomains.txt -aaaa -resp | urlx dnsx -aaaa
 
-# Extract IPs from massdns output
-massdns -r resolvers.txt -t A -o S domains.txt | urlx massdns -ip
+# Extract MX records
+dnsx -l domains.txt -mx -resp | urlx dnsx -mx
 
-# Generate completion
-urlx completion bash > /etc/bash_completion.d/urlx
+# Extract multiple record types
+dnsx -l domains.txt -a -aaaa -cname -resp | urlx dnsx -a -aaaa -cname
+
+# Extract TXT records
+dnsx -l domains.txt -txt -resp | urlx dnsx -txt
+
+# Extract nameservers
+dnsx -l domains.txt -ns -resp | urlx dnsx -ns
+
+# Process with multiple threads
+dnsx -l domains.txt -a -resp | urlx dnsx -a -t 10
 ```
 
 ## Input
 
 Reads from stdin or file. Use `-` for explicit stdin.
-
-## Completion
-
-Generate shell completion:
-```bash
-urlx completion bash  # or zsh
-```

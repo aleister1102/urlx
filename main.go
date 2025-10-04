@@ -20,10 +20,12 @@ var (
 	numThreads           int
 	nmapExportIPPort     bool
 	nmapFilterOpenPorts  bool
-	dnsExtractA          bool
-	dnsExtractCNAME      bool
-	dnsExtractMX         bool
-	wafKindFilter        string
+	dnsxExtractA         bool
+	dnsxExtractAAAA      bool
+	dnsxExtractCNAME     bool
+	dnsxExtractMX        bool
+	dnsxExtractTXT       bool
+	dnsxExtractNS        bool
 	ffufProcessFolder    bool
 	filterStatusCodes    string
 	filterContentTypes   string
@@ -39,20 +41,15 @@ func usage() {
 
 	fmt.Fprintln(os.Stderr, "Available Tools:")
 	fmt.Fprintln(os.Stderr, "  amass          Processes amass intel/enum output. Extracts hostnames.")
-	fmt.Fprintln(os.Stderr, "  completion     Generates shell completion scripts for bash or zsh.")
 	fmt.Fprintln(os.Stderr, "  dirsearch      Processes dirsearch output. Extracts found paths and combines with target.")
-	fmt.Fprintln(os.Stderr, "  dns            Processes structured DNS record output (comma-separated). See specific options.")
-	fmt.Fprintln(os.Stderr, "  domain         Extracts domain/IP from a list of URLs.")
+	fmt.Fprintln(os.Stderr, "  dnsx           Processes dnsx output. Extracts DNS records (A, AAAA, CNAME, MX, TXT, NS).")
 	fmt.Fprintln(os.Stderr, "  ffuf           Processes ffuf output. Parses URLs from successful results.")
 	fmt.Fprintln(os.Stderr, "  gospider       Processes gospider output. Extracts URLs from scan results.")
 	fmt.Fprintln(os.Stderr, "  httpx          Processes httpx output. Expects URLs or lines containing URLs.")
-	fmt.Fprintln(os.Stderr, "  mantra         Processes mantra output. Extracts secret and URL from found leaks.")
-	fmt.Fprintln(os.Stderr, "  massdns        Processes massdns output. Extracts subdomains with valid public A records.")
 	fmt.Fprintln(os.Stderr, "  nmap           Processes nmap output (standard -oN or -oG). Extracts IP, port, service, version.")
 	fmt.Fprintln(os.Stderr, "  nuclei         Processes nuclei output. Extracts URLs from scan results.")
 	fmt.Fprintln(os.Stderr, "  urls           Processes a list of URLs from file. Validates and filters URLs.")
-	fmt.Fprintln(os.Stderr, "  wafw00f        Processes wafw00f output. Extracts URL and detected WAF.")
-	fmt.Fprintln(os.Stderr, "Common Options (generally not applicable to 'domain' tool directly):")
+	fmt.Fprintln(os.Stderr, "Common Options:")
 	fmt.Fprintln(os.Stderr, "  -r             Extract redirect URLs (if tool output provides redirect info, e.g., httpx, ffuf).")
 	fmt.Fprintln(os.Stderr, "  -s             Strip URL components (path, query parameters and fragments) before further processing or output.")
 	fmt.Fprintln(os.Stderr, "  -d             Extract domain/subdomain hostnames with port (excludes IPs, strips scheme/path/query/fragment).")
@@ -63,23 +60,23 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  -p             Export IP and port pairs (e.g., 192.168.1.1:80). Overrides default nmap format.")
 	fmt.Fprintln(os.Stderr, "  -o             Filter for open ports only. Applied before -p if both are used.")
 
-	fmt.Fprintln(os.Stderr, "Dns Specific Options ('dns' tool only - must choose one):")
-	fmt.Fprintln(os.Stderr, "  -a             Extract IP addresses (A/AAAA records), sorted and unique.")
-	fmt.Fprintln(os.Stderr, "  -cname         Extract CNAME domain records (the canonical name).")
-	fmt.Fprintln(os.Stderr, "  -mx            Extract MX domain records (the mail exchange hostname).")
+	fmt.Fprintln(os.Stderr, "Dnsx Specific Options ('dnsx' tool only - can combine multiple):")
+	fmt.Fprintln(os.Stderr, "  -a             Extract A records (IPv4 addresses).")
+	fmt.Fprintln(os.Stderr, "  -aaaa          Extract AAAA records (IPv6 addresses).")
+	fmt.Fprintln(os.Stderr, "  -cname         Extract CNAME records (canonical names).")
+	fmt.Fprintln(os.Stderr, "  -mx            Extract MX records (mail exchange hostnames).")
+	fmt.Fprintln(os.Stderr, "  -txt           Extract TXT records.")
+	fmt.Fprintln(os.Stderr, "  -ns            Extract NS and SOA records (nameservers).")
 
-	fmt.Fprintln(os.Stderr, "Wafw00f Specific Options ('wafw00f' tool only):")
-	fmt.Fprintln(os.Stderr, "  -k <kind>      WAF kind to extract: 'none', 'generic', or 'known' (default: 'none').")
-
-	fmt.Fprintln(os.Stderr, "Filtering & Matching Options ('ffuf', 'httpx'):")
+	fmt.Fprintln(os.Stderr, "Filtering & Matching Options ('ffuf', 'httpx', 'dirsearch'):")
 	fmt.Fprintln(os.Stderr, "  -f             Process all files in the current directory as ffuf input (ffuf only).")
 	fmt.Fprintln(os.Stderr, "  -fc <codes>    Filter out responses with these status codes (e.g., 403,404).")
 	fmt.Fprintln(os.Stderr, "  -fcl <lengths> Filter out responses with these content lengths (e.g., 0,123).")
-	fmt.Fprintln(os.Stderr, "  -fct <types>   Filter out responses with these content types (e.g., text/html).")
+	fmt.Fprintln(os.Stderr, "  -fct <types>   Filter out responses with these content types (e.g., text/html) (ffuf, httpx only).")
 	fmt.Fprintln(os.Stderr, "  -mc <codes>    Match responses with these status codes (e.g., 200,302).")
 	fmt.Fprintln(os.Stderr, "  -mcl <lengths> Match responses with these content lengths (e.g., 512,1024).")
-	fmt.Fprintln(os.Stderr, "  -mct <types>   Match responses with these content types (e.g., application/json).")
-	fmt.Fprintln(os.Stderr, "  -pc            Preserve original line content on match (instead of extracting URL) (ffuf, httpx only).")
+	fmt.Fprintln(os.Stderr, "  -mct <types>   Match responses with these content types (e.g., application/json) (ffuf, httpx only).")
+	fmt.Fprintln(os.Stderr, "  -pc            Preserve original line content on match (instead of extracting URL) (ffuf, httpx, dirsearch).")
 
 	fmt.Fprintln(os.Stderr, "Input:")
 	fmt.Fprintln(os.Stderr, "  [input_file]   Optional. File to read input from. If omitted or '-', reads from stdin.")
@@ -109,15 +106,6 @@ func main() {
 	toolType := os.Args[1]
 	argsForFlags := os.Args[2:]
 
-	if toolType == "completion" {
-		if len(os.Args) != 3 {
-			fmt.Fprintln(os.Stderr, "Usage: ./urlx completion [bash|zsh]")
-			os.Exit(1)
-		}
-		handleCompletion(os.Args[2])
-		return
-	}
-
 	cmdFlags := flag.NewFlagSet(toolType, flag.ExitOnError)
 	cmdFlags.Usage = usage
 
@@ -130,11 +118,12 @@ func main() {
 	cmdFlags.BoolVar(&nmapExportIPPort, "p", false, "Export IP and port pairs (nmap only)")
 	cmdFlags.BoolVar(&nmapFilterOpenPorts, "o", false, "Filter for open ports only (nmap only)")
 
-	cmdFlags.BoolVar(&dnsExtractA, "a", false, "Extract A/AAAA records (dns only)")
-	cmdFlags.BoolVar(&dnsExtractCNAME, "cname", false, "Extract CNAME records (dns only)")
-	cmdFlags.BoolVar(&dnsExtractMX, "mx", false, "Extract MX records (dns only)")
-
-	cmdFlags.StringVar(&wafKindFilter, "k", "none", "WAF kind to extract (none, generic, known) (wafw00f only)")
+	cmdFlags.BoolVar(&dnsxExtractA, "a", false, "Extract A records (dnsx only)")
+	cmdFlags.BoolVar(&dnsxExtractAAAA, "aaaa", false, "Extract AAAA records (dnsx only)")
+	cmdFlags.BoolVar(&dnsxExtractCNAME, "cname", false, "Extract CNAME records (dnsx only)")
+	cmdFlags.BoolVar(&dnsxExtractMX, "mx", false, "Extract MX records (dnsx only)")
+	cmdFlags.BoolVar(&dnsxExtractTXT, "txt", false, "Extract TXT records (dnsx only)")
+	cmdFlags.BoolVar(&dnsxExtractNS, "ns", false, "Extract NS/SOA records (dnsx only)")
 
 	cmdFlags.BoolVar(&ffufProcessFolder, "f", false, "Process all files in current directory (ffuf only)")
 	cmdFlags.StringVar(&filterStatusCodes, "fc", "", "Comma-separated status codes to filter out (ffuf, httpx only)")
@@ -152,23 +141,16 @@ func main() {
 	}
 
 	switch toolType {
-	case "httpx", "ffuf", "dirsearch", "amass", "nmap", "dns", "wafw00f", "domain", "mantra", "nuclei", "gospider", "urls", "massdns":
+	case "httpx", "ffuf", "dirsearch", "amass", "nmap", "dnsx", "nuclei", "gospider", "urls":
 		// Known tool
 	default:
-		fmt.Fprintf(os.Stderr, "Error: Unsupported tool type '%s'. Supported tools are: httpx, ffuf, dirsearch, amass, nmap, dns, wafw00f, domain, mantra, nuclei, gospider, urls, massdns, completion.\n", toolType)
+		fmt.Fprintf(os.Stderr, "Error: Unsupported tool type '%s'. Supported tools are: httpx, ffuf, dirsearch, amass, nmap, dnsx, nuclei, gospider, urls.\n", toolType)
 		usage()
 	}
 
-	if toolType == "dns" && !dnsExtractA && !dnsExtractCNAME && !dnsExtractMX {
-		fmt.Fprintln(os.Stderr, "Error: For 'dns' tool, you must specify one of -a, -cname, or -mx options.")
+	if toolType == "dnsx" && !dnsxExtractA && !dnsxExtractAAAA && !dnsxExtractCNAME && !dnsxExtractMX && !dnsxExtractTXT && !dnsxExtractNS {
+		fmt.Fprintln(os.Stderr, "Error: For 'dnsx' tool, you must specify at least one of -a, -aaaa, -cname, -mx, -txt, or -ns options.")
 		usage()
-	}
-
-	if toolType == "wafw00f" {
-		if wafKindFilter != "none" && wafKindFilter != "generic" && wafKindFilter != "known" {
-			fmt.Fprintf(os.Stderr, "Error: Invalid value for -k option: '%s'. Must be one of none, generic, or known.\n", wafKindFilter)
-			usage()
-		}
 	}
 
 	if numThreads < 1 {
@@ -301,7 +283,7 @@ func main() {
 						processedOutputs = append(processedOutputs, result)
 					}
 				case "dirsearch":
-					result := processDirsearchLine(line)
+					result := processDirsearchLine(line, filterStatusCodes, filterContentLengths, matchStatusCodes, matchContentLengths, preserveContent)
 					if result != "" {
 						processedOutputs = append(processedOutputs, result)
 					}
@@ -320,22 +302,9 @@ func main() {
 					var nmapResults []string
 					nmapResults, currentNmapIPContext = processNmapLine(line, currentNmapIPContext)
 					processedOutputs = append(processedOutputs, nmapResults...)
-				case "dns":
-					dnsResults := processDnsLine(line)
-					processedOutputs = append(processedOutputs, dnsResults...)
-				case "wafw00f":
-					wafw00fResults := processWafw00fLine(line)
-					processedOutputs = append(processedOutputs, wafw00fResults...)
-				case "domain":
-					domainResult := processDomainToolLine(line)
-					if domainResult != "" {
-						processedOutputs = append(processedOutputs, domainResult)
-					}
-				case "mantra":
-					mantraResult := processMantraLine(line)
-					if mantraResult != "" {
-						processedOutputs = append(processedOutputs, mantraResult)
-					}
+				case "dnsx":
+					dnsxResults := processDnsxLine(line)
+					processedOutputs = append(processedOutputs, dnsxResults...)
 				case "nuclei":
 					nucleiResult := processNucleiLine(line)
 					if nucleiResult != "" {
@@ -351,14 +320,6 @@ func main() {
 					if urlsResult != "" {
 						processedOutputs = append(processedOutputs, urlsResult)
 					}
-				case "massdns":
-					var massdnsResults []string
-					if filterIPHost {
-						massdnsResults = processMassdnsLineForIP(line)
-					} else {
-						massdnsResults = processMassdnsLine(line)
-					}
-					processedOutputs = append(processedOutputs, massdnsResults...)
 				}
 				for _, outputItem := range processedOutputs {
 					if outputItem == "" {
@@ -386,11 +347,7 @@ func main() {
 						continue
 					}
 
-					if toolType == "domain" {
-						resultsChan <- outputItem
-					} else {
-						resultsChan <- outputItem
-					}
+					resultsChan <- outputItem
 				}
 			}
 		}()
@@ -399,7 +356,7 @@ func main() {
 	outputWg.Add(1)
 	go func() {
 		defer outputWg.Done()
-		if toolType == "dns" && dnsExtractA {
+		if toolType == "dnsx" && (dnsxExtractA || dnsxExtractAAAA) {
 			var allIPs []string
 			for result := range resultsChan {
 				allIPs = append(allIPs, result)
@@ -479,17 +436,7 @@ func getDomainHostWithPort(outputItem string, toolType string) string {
 			}
 		}
 		return ""
-	case "wafw00f":
-		urlAndWaf := strings.SplitN(outputItem, " - ", 2)
-		if len(urlAndWaf) > 0 {
-			urlToParse = urlAndWaf[0]
-		}
-	case "mantra":
-		secretAndURL := strings.SplitN(outputItem, " - ", 2)
-		if len(secretAndURL) == 2 {
-			urlToParse = secretAndURL[1]
-		}
-	default: // httpx, ffuf, dirsearch, nuclei, etc.
+	default: // httpx, ffuf, dirsearch, nuclei, gospider, urls, etc.
 		urlToParse = outputItem
 	}
 
@@ -529,17 +476,7 @@ func getHost(outputItem string, toolType string) string {
 			// IP:port format from -p flag
 			host = getDomain(outputItem)
 		}
-	} else if toolType == "wafw00f" {
-		urlAndWaf := strings.SplitN(outputItem, " - ", 2)
-		if len(urlAndWaf) > 0 {
-			host = getDomain(urlAndWaf[0])
-		}
-	} else if toolType == "mantra" {
-		secretAndURL := strings.SplitN(outputItem, " - ", 2)
-		if len(secretAndURL) == 2 {
-			host = getDomain(secretAndURL[1])
-		}
-	} else { // httpx, ffuf, dirsearch, nuclei, amass, domain
+	} else { // httpx, ffuf, dirsearch, nuclei, gospider, urls, amass
 		host = getDomain(outputItem)
 	}
 	return host
@@ -567,26 +504,8 @@ func getIPHostWithPort(outputItem string, toolType string) string {
 		return "" // If nmap output couldn't be parsed for IP:port
 	}
 
-	var urlToParse string
-	// For other tools, we extract the URL part first
-	switch toolType {
-	case "wafw00f":
-		urlAndWaf := strings.SplitN(outputItem, " - ", 2)
-		if len(urlAndWaf) > 0 {
-			urlToParse = urlAndWaf[0]
-		}
-	case "mantra":
-		secretAndURL := strings.SplitN(outputItem, " - ", 2)
-		if len(secretAndURL) == 2 {
-			urlToParse = secretAndURL[1]
-		}
-	default: // httpx, ffuf, dirsearch, nuclei, etc.
-		urlToParse = outputItem
-	}
-
-	if urlToParse == "" {
-		return ""
-	}
+	// For all other tools, output item is the URL
+	urlToParse := outputItem
 
 	// Now parse the URL and check if host is IP
 	if !strings.HasPrefix(urlToParse, "http://") && !strings.HasPrefix(urlToParse, "https://") {
@@ -604,18 +523,12 @@ func getIPHostWithPort(outputItem string, toolType string) string {
 	return ""
 }
 
-// processHttpxLine is in parser_httpx.go
-// processFfufLine is in parser_ffuf.go
-// processDirsearchLine is in parser_dirsearch.go
-// processAmassLine is in parser_amass.go
+// processHttpxLine is in httpx.go
+// processFfufLine is in ffuf.go
+// processDirsearchLine is in dirsearch.go
+// processAmassLine is in amass.go
 // processNmapLine is in nmap.go
-// processDnsLine is in dns.go
-// processWafw00fLine is in wafw00f.go
-// processDomainToolLine is in domain_parser.go
-// processMantraLine is in mantra_parser.go
+// processDnsxLine is in dnsx.go
 // processNucleiLine is in nuclei.go
 // processGospiderLine is in gospider.go
 // processUrlsLine is in urls.go
-// processMassdnsLine is in massdns.go
-// processMassdnsLineForIP is in massdns.go
-// handleCompletion is in completion.go
